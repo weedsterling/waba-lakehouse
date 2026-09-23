@@ -4,7 +4,9 @@ Machine cible : **Windows 10/11, 32 Go RAM**, 8 cœurs recommandés, 100 Go de d
 
 ---
 
-## Partie A — Logiciels à installer (dans cet ordre)
+## Partie A — Option 1 : installation directe sur Windows (WSL2 + Docker Desktop)
+
+> Tu préfères isoler l'environnement ? Utilise l'**Option 2 : machine virtuelle** (Partie A-bis).
 
 ### A.1 Socle Windows
 
@@ -65,6 +67,64 @@ les montages de volumes Docker depuis `/mnt/c` sont 5 à 10 fois plus lents. Ouv
 docker run --rm hello-world
 docker compose version
 ```
+
+---
+
+## Partie A-bis — Option 2 : tout installer dans une machine virtuelle (recommandé pour isoler)
+
+Principe : Windows n'héberge que l'hyperviseur, l'IDE et le navigateur. **Tout le reste** (Docker, Spark, Kafka,
+Minikube…) vit dans une VM Ubuntu Server jetable, que l'on peut sauvegarder (snapshot) avant chaque niveau.
+
+### A-bis.1 Choisir l'hyperviseur (taper `winver` pour connaître ton édition)
+
+| Édition Windows | Hyperviseur | Pourquoi |
+|---|---|---|
+| **Pro / Entreprise / Éducation** | **Hyper-V** (intégré) | Natif, le plus performant, cohabite avec WSL2. Activation : `Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All` puis redémarrer |
+| **Famille (Home)** | **VMware Workstation Pro** (gratuit pour usage personnel) | Hyper-V indisponible ; plus stable que VirtualBox sous forte charge |
+| Alternative | VirtualBox 7.1 | Gratuit et open source, un peu moins performant en I/O |
+
+### A-bis.2 Dimensionnement de la VM (hôte 32 Go)
+
+| Ressource | Levels 1-3 | Level 4 (Kubernetes) |
+|---|---|---|
+| RAM | 16 Go | **22 Go** (laisser ≥ 8 Go à Windows) |
+| vCPU | 6 | 8 |
+| Disque (dynamique) | 100 Go | 150 Go |
+| OS | **Ubuntu Server 24.04 LTS** (sans interface graphique : RAM économisée) | idem |
+
+Hyper-V : créer une VM **Génération 2**, *désactiver* Secure Boot **ou** choisir le modèle « Microsoft UEFI Certificate Authority »,
+**mémoire statique** (pas de mémoire dynamique : Spark et Kafka la supportent mal), commutateur *Default Switch*.
+Pendant l'installation d'Ubuntu, cocher **Install OpenSSH server**.
+
+### A-bis.3 Préparer la VM (une seule commande)
+
+```bash
+# dans la VM, après l'installation d'Ubuntu
+git clone <url-de-ton-depot> ~/waba-lakehouse     # ou copier le zip via scp
+cd ~/waba-lakehouse
+./scripts/vm-setup.sh              # Docker Engine, Git, Java 17, Python, réglages noyau
+./scripts/vm-setup.sh --with-k8s   # au Level 4 : + kubectl, Minikube, Helm, k9s
+exit                               # se reconnecter pour activer le groupe docker
+```
+
+Pas de Docker Desktop dans la VM : **Docker Engine** natif, plus léger et sans licence.
+
+### A-bis.4 Travailler depuis Windows
+
+1. **VS Code + extension *Remote - SSH*** sur Windows → `ssh <user>@<ip-de-la-vm>`. On édite le code *dans* la VM.
+2. **Redirection de ports automatique** : VS Code transfère 8501, 9001, 8080, 8088… → les URL `http://localhost:…`
+   du README fonctionnent telles quelles dans le navigateur Windows. Sinon, utiliser `http://<ip-de-la-vm>:8501`.
+3. **IP stable** : avec le *Default Switch* Hyper-V l'IP change au redémarrage ; utiliser le nom `<nom-vm>.mshome.net`
+   ou créer un commutateur externe. Sous VMware (NAT), l'IP reste en général stable.
+4. **Clé SSH** (évite de retaper le mot de passe) : `ssh-keygen -t ed25519` puis `type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh <user>@<ip> "cat >> ~/.ssh/authorized_keys"`.
+5. **DBeaver** (sur Windows) → connexion Trino `localhost:8088` (avec redirection) ou `<ip-de-la-vm>:8088`.
+
+### A-bis.5 Bonnes pratiques
+
+* **Snapshot / point de contrôle** avant chaque niveau : retour arrière instantané si une installation casse la VM.
+* **Level 4** : Minikube tourne *dans* la VM avec le driver Docker (`minikube start --driver=docker --cpus 6 --memory 16g`) ;
+  aucune virtualisation imbriquée n'est nécessaire.
+* Le code reste versionné sur GitHub : la VM est **jetable**, le dépôt est la source de vérité.
 
 ---
 

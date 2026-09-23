@@ -51,6 +51,9 @@ de WestAfrica BancAssur Group (8 pays, 4 lignes métier) :
 
 Ports utilisés : 8501, 9000, 9001, 8181, 8080, 8081, 7077, 4040, 8088.
 
+> **Installation dans une machine virtuelle** (Hyper-V / VMware) : voir `docs/ROADMAP.md` Partie A-bis et le script
+> `scripts/vm-setup.sh`, qui prépare une VM Ubuntu Server 24.04 en une commande.
+
 ## 3. Démarrage from scratch
 
 ```powershell
