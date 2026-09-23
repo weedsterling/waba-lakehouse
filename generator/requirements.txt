@@ -1,0 +1,5 @@
+streamlit==1.64.0
+numpy==2.4.6
+pandas==3.0.6
+pyarrow==25.0.1
+boto3==1.43.100

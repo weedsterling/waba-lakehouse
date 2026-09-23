@@ -1,0 +1,122 @@
+# WABA Group — Level 1 : Ingestion & Data Lakehouse batch
+# Un seul `docker compose up -d --build` démarre toute la stack :
+#   MinIO (+ init buckets / compte de service) · Iceberg REST catalog · Spark (master + worker)
+#   · Trino · Streamlit
+# Aucun secret en dur : toutes les valeurs viennent du fichier .env (cf. .env.example).
+
+name: waba-lakehouse
+
+x-s3-env: &s3-env
+  AWS_ACCESS_KEY_ID: ${LAKEHOUSE_ACCESS_KEY:?définir LAKEHOUSE_ACCESS_KEY dans .env}
+  AWS_SECRET_ACCESS_KEY: ${LAKEHOUSE_SECRET_KEY:?définir LAKEHOUSE_SECRET_KEY dans .env}
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  MINIO_ENDPOINT: http://minio:9000
+
+services:
+  # ------------------------------------------------------------------ Storage
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?définir MINIO_ROOT_USER dans .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?définir MINIO_ROOT_PASSWORD dans .env}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio-init:
+    # Crée les buckets et un compte de service dédié (principe du moindre privilège :
+    # les applications n'utilisent jamais le compte root MinIO).
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio: { condition: service_healthy }
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      LAKEHOUSE_ACCESS_KEY: ${LAKEHOUSE_ACCESS_KEY}
+      LAKEHOUSE_SECRET_KEY: ${LAKEHOUSE_SECRET_KEY}
+    volumes: [./scripts/minio-init.sh:/minio-init.sh:ro]
+    entrypoint: ["/bin/sh", "/minio-init.sh"]
+    restart: "no"
+
+  # ------------------------------------------------------------------ Catalog
+  iceberg-rest:
+    image: tabulario/iceberg-rest:1.6.0
+    depends_on:
+      minio-init: { condition: service_completed_successfully }
+    environment:
+      <<: *s3-env
+      CATALOG_WAREHOUSE: s3://lakehouse/
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+      # Persistance du catalogue (SQLite sur volume) : survit aux redémarrages
+      CATALOG_URI: jdbc:sqlite:file:/home/iceberg/iceberg_catalog.db
+    ports: ["8181:8181"]
+    volumes: [iceberg-catalog:/home/iceberg]
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------ Compute
+  spark-master:
+    build: ./spark
+    image: waba/spark:3.5.3-iceberg1.6.1
+    hostname: spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    depends_on: [iceberg-rest]
+    environment:
+      <<: *s3-env
+      PII_HASH_SALT: ${PII_HASH_SALT:?définir PII_HASH_SALT dans .env}
+      SPARK_NO_DAEMONIZE: "true"
+    ports: ["8080:8080", "7077:7077", "4040:4040"]
+    volumes:
+      - ./spark/jobs:/opt/waba/jobs:ro          # hot-reload du code en développement
+      - ./spark/waba_spark:/opt/waba/waba_spark:ro
+    restart: unless-stopped
+
+  spark-worker:
+    image: waba/spark:3.5.3-iceberg1.6.1
+    hostname: spark-worker
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    depends_on: [spark-master]
+    environment:
+      <<: *s3-env
+      PII_HASH_SALT: ${PII_HASH_SALT}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-4}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-6g}
+      SPARK_NO_DAEMONIZE: "true"
+    ports: ["8081:8081"]
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------ Serving
+  trino:
+    image: trinodb/trino:467
+    depends_on: [iceberg-rest]
+    environment:
+      <<: *s3-env
+    ports: ["8088:8080"]
+    volumes: [./trino/catalog:/etc/trino/catalog:ro]
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------ Data generation
+  generator:
+    build: ./generator
+    image: waba/generator:1.0
+    depends_on:
+      minio-init: { condition: service_completed_successfully }
+    environment:
+      <<: *s3-env
+      RAW_BUCKET: raw-landing
+      GENERATOR_CACHE_DIR: /data/referentials
+    ports: ["8501:8501"]
+    volumes: [generator-cache:/data]
+    restart: unless-stopped
+
+volumes:
+  minio-data:
+  iceberg-catalog:
+  generator-cache:

@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.parquet
+spark-warehouse/
+metastore_db/
+derby.log
+.idea/
+.vscode/

@@ -1,0 +1,5 @@
+# Environnement local de développement / tests (hors conteneurs)
+-r generator/requirements.txt
+pyspark==3.5.3
+pytest==9.1.1
+ruff==0.14.0
