@@ -15,7 +15,9 @@ x-s3-env: &s3-env
 services:
   # ------------------------------------------------------------------ Storage
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # MinIO a cessé de publier ses images communautaires (Docker Hub puis quay.io).
+    # On utilise un build communautaire open source de la même release, épinglé.
+    image: ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?définir MINIO_ROOT_USER dans .env}
@@ -23,7 +25,7 @@ services:
     ports: ["9000:9000", "9001:9001"]
     volumes: [minio-data:/data]
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -32,7 +34,8 @@ services:
   minio-init:
     # Crée les buckets et un compte de service dédié (principe du moindre privilège :
     # les applications n'utilisent jamais le compte root MinIO).
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: bitnamilegacy/minio-client:2025.7.21-debian-12-r3   # client mc figé (Bitnami legacy)
+    user: root
     depends_on:
       minio: { condition: service_healthy }
     environment:
@@ -40,6 +43,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       LAKEHOUSE_ACCESS_KEY: ${LAKEHOUSE_ACCESS_KEY}
       LAKEHOUSE_SECRET_KEY: ${LAKEHOUSE_SECRET_KEY}
+      HOME: /tmp                    # mc écrit sa configuration dans $HOME/.mc
     volumes: [./scripts/minio-init.sh:/minio-init.sh:ro]
     entrypoint: ["/bin/sh", "/minio-init.sh"]
     restart: "no"
@@ -65,6 +69,7 @@ services:
   spark-master:
     build: ./spark
     image: waba/spark:3.5.3-iceberg1.6.1
+    pull_policy: build              # image locale : ne jamais la chercher sur un registre
     hostname: spark-master
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
     depends_on: [iceberg-rest]
@@ -79,7 +84,9 @@ services:
     restart: unless-stopped
 
   spark-worker:
+    build: ./spark                  # même image que le master (construite une fois, cache Docker)
     image: waba/spark:3.5.3-iceberg1.6.1
+    pull_policy: build
     hostname: spark-worker
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
     depends_on: [spark-master]
@@ -106,6 +113,7 @@ services:
   generator:
     build: ./generator
     image: waba/generator:1.0
+    pull_policy: build
     depends_on:
       minio-init: { condition: service_completed_successfully }
     environment:

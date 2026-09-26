@@ -2,7 +2,12 @@
 # Initialisation idempotente de MinIO : buckets + compte de service applicatif.
 set -eu
 
-mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+# Attente active de MinIO (robuste même sans healthcheck)
+i=0
+until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+  i=$((i+1)); [ "$i" -ge 30 ] && { echo "MinIO injoignable" >&2; exit 1; }
+  echo "attente de MinIO ($i/30)…"; sleep 2
+done
 
 for bucket in raw-landing lakehouse archive; do
   mc mb --ignore-existing "local/$bucket"

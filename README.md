@@ -169,7 +169,7 @@ Les tests Spark nécessitent Java 17 (`JAVA_HOME`) ; ils sont ignorés si PySpar
 * **Mobile money** : `country_code` (= pays émetteur) ajouté pour respecter la contrainte « toutes les tables ».
 * **IBAN** : colonne ajoutée au référentiel comptes pour démontrer le masquage exigé par les contraintes.
 * **Séquence `NN`** : sur 2 chiffres minimum, elle peut dépasser 99 en mode continu (plusieurs milliers de micro-lots/jour).
-* **MinIO** : l'édition communautaire n'est plus distribuée sur Docker Hub ; les images sont tirées de `quay.io` et figées sur une release. Alternatives S3 compatibles : SeaweedFS, Garage.
+* **MinIO** : MinIO a cessé de publier ses images communautaires (Docker Hub, puis quay.io depuis 2026). Le serveur provient d'un build communautaire open source épinglé (`ghcr.io/coollabsio/minio`), le client `mc` de l'image figée `bitnamilegacy/minio-client`. Alternatives S3 compatibles si ces miroirs disparaissent : SeaweedFS, Garage.
 * Le catalogue REST (SQLite) est mono-instance : adapté au développement, pas à la haute disponibilité.
 
 ## 9. Dépannage
