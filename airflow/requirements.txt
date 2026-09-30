@@ -1,0 +1,2 @@
+apache-airflow-providers-apache-spark==6.3.2
+apache-airflow-providers-amazon==9.37.0

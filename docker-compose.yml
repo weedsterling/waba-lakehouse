@@ -1,4 +1,4 @@
-# WABA Group — Level 1 : Ingestion & Data Lakehouse batch
+# WABA Group — Levels 1-2 : Lakehouse batch (MinIO, Iceberg, Spark, Trino) + orchestration Airflow
 # Un seul `docker compose up -d --build` démarre toute la stack :
 #   MinIO (+ init buckets / compte de service) · Iceberg REST catalog · Spark (master + worker)
 #   · Trino · Streamlit
@@ -11,6 +11,41 @@ x-s3-env: &s3-env
   AWS_SECRET_ACCESS_KEY: ${LAKEHOUSE_SECRET_KEY:?définir LAKEHOUSE_SECRET_KEY dans .env}
   AWS_REGION: ${AWS_REGION:-us-east-1}
   MINIO_ENDPOINT: http://minio:9000
+
+x-airflow-env: &airflow-env
+  <<: *s3-env
+  PII_HASH_SALT: ${PII_HASH_SALT}
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?définir AIRFLOW_FERNET_KEY dans .env}
+  AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/config/passwords.json
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@airflow-postgres:5432/airflow
+  AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?définir AIRFLOW_JWT_SECRET dans .env}
+  AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY:?définir AIRFLOW_API_SECRET_KEY dans .env}
+  AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+  # Connections Airflow injectées depuis .env : aucun credential dans le code des DAGs
+  AIRFLOW_CONN_SPARK_DEFAULT: spark://spark-master:7077
+  AIRFLOW_CONN_MINIO_S3: '{"conn_type": "aws", "login": "${LAKEHOUSE_ACCESS_KEY}", "password": "${LAKEHOUSE_SECRET_KEY}", "extra": {"endpoint_url": "http://minio:9000", "region_name": "${AWS_REGION:-us-east-1}"}}'
+
+x-airflow-common: &airflow-common
+  image: waba/airflow:3.3.2-spark3.5.3
+  pull_policy: never                      # construite par le service airflow-init
+  user: "50000:0"
+  environment:
+    <<: *airflow-env
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./spark/jobs:/opt/waba/jobs:ro
+    - ./spark/waba_spark:/opt/waba/waba_spark:ro
+    - airflow-logs:/opt/airflow/logs
+    - airflow-config:/opt/airflow/config
+  depends_on:
+    airflow-init: { condition: service_completed_successfully }
+    spark-master: { condition: service_started }
+  restart: unless-stopped
 
 services:
   # ------------------------------------------------------------------ Storage
@@ -32,7 +67,7 @@ services:
     image: bitnamilegacy/minio-client:2025.7.21-debian-12-r3   # client mc figé (Bitnami legacy)
     user: root
     depends_on:
-      minio: { condition: service_started }
+      minio: { condition: service_started }   # minio-init attend lui-même que MinIO réponde
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -79,9 +114,8 @@ services:
     restart: unless-stopped
 
   spark-worker:
-    build: ./spark                  # même image que le master (construite une fois, cache Docker)
-    image: waba/spark:3.5.3-iceberg1.6.1
-    pull_policy: build
+    image: waba/spark:3.5.3-iceberg1.6.1   # image construite par le service spark-master
+    pull_policy: never
     hostname: spark-worker
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
     depends_on: [spark-master]
@@ -97,6 +131,9 @@ services:
   # ------------------------------------------------------------------ Serving
   trino:
     image: trinodb/trino:467
+    deploy:
+      resources:
+        limits: { memory: 3g }            # la JVM Trino dimensionne son heap sur cette limite
     depends_on: [iceberg-rest]
     environment:
       <<: *s3-env
@@ -119,7 +156,70 @@ services:
     volumes: [generator-cache:/data]
     restart: unless-stopped
 
+  # ================================================================== LEVEL 2 : orchestration
+  airflow-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?définir AIRFLOW_DB_PASSWORD dans .env}
+      POSTGRES_DB: airflow
+    volumes: [airflow-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    build:
+      context: .                          # racine : l'image réutilise spark/jars et spark/conf
+      dockerfile: airflow/Dockerfile
+    pull_policy: build
+    user: "0:0"
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -euo pipefail
+        mkdir -p /opt/airflow/logs /opt/airflow/config
+        # Mot de passe de l'UI (SimpleAuthManager, remplacé par Keycloak au Level 4)
+        printf '{"admin": "%s"}' "$${AIRFLOW_ADMIN_PASSWORD}" > /opt/airflow/config/passwords.json
+        chown -R 50000:0 /opt/airflow/logs /opt/airflow/config
+        chmod 600 /opt/airflow/config/passwords.json
+        su airflow -s /bin/bash -c "PATH=$$PATH airflow db migrate"   # su réinitialise PATH : on le transmet
+        echo "Airflow initialisé"
+    environment:
+      <<: *airflow-env
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?définir AIRFLOW_ADMIN_PASSWORD dans .env}
+    depends_on:
+      airflow-postgres: { condition: service_healthy }
+    restart: "no"
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports: ["8090:8080"]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/api/v2/version"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    hostname: airflow-scheduler           # joignable par les executors Spark (driver en mode client)
+    command: scheduler
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+
 volumes:
   minio-data:
   iceberg-catalog:
   generator-cache:
+  airflow-db:
+  airflow-logs:
+  airflow-config:

@@ -62,7 +62,8 @@ cd waba-lakehouse
 Copy-Item .env.example .env        # bash : cp .env.example .env
 # éditer .env : remplacer toutes les valeurs "change-me"
 
-docker compose up -d --build       # 1er build : ~5-10 min (téléchargement des images et jars)
+./scripts/download-jars.sh         # JARs Spark (~330 Mo), reprise auto + vérification SHA-1
+docker compose up -d --build       # 1er build : ~5-15 min selon la connexion
 docker compose ps                  # minio-init doit être "Exited (0)", les autres "running"
 ```
 
@@ -181,3 +182,27 @@ Les tests Spark nécessitent Java 17 (`JAVA_HOME`) ; ils sont ignorés si PySpar
 | Trino : `Table not found` | Lancer l'ingestion d'abord ; vérifier `curl http://localhost:8181/v1/namespaces`. |
 | Port déjà utilisé | Modifier le port publié côté hôte dans `docker-compose.yml`. |
 | Réinitialisation complète | `docker compose down -v` (⚠️ supprime les volumes : données et catalogue). |
+
+---
+
+## Level 2 — Orchestration Airflow & architecture médaillon (en cours)
+
+| Service | Rôle | URL |
+|---|---|---|
+| `airflow-apiserver` | UI + API Airflow 3 (utilisateur `admin`, mot de passe `AIRFLOW_ADMIN_PASSWORD`) | http://localhost:8090 |
+| `airflow-scheduler` | Planifie et exécute les tâches (LocalExecutor) ; héberge le driver Spark en mode client | — |
+| `airflow-dag-processor` | Analyse les fichiers de DAGs | — |
+| `airflow-postgres` | Base de métadonnées Airflow | — |
+
+```bash
+./scripts/gen-secrets.sh          # complète .env (secrets Airflow) sans toucher aux secrets existants
+docker compose up -d --build
+```
+
+| DAG | Déclenchement | Rôle |
+|---|---|---|
+| `dag_ingest_raw` | toutes les 15 min + capteur de nouveaux fichiers MinIO | raw-landing → `bronze.*` ; publie l'asset `bronze` |
+
+Choix : **Airflow 3.3** (branche 2.x en fin de vie), image construite en copiant le client Spark et le JRE
+depuis l'image Spark (versions identiques driver/executors), Connections injectées par variables
+d'environnement (`AIRFLOW_CONN_*`), enchaînement des DAGs par **assets** (data-aware scheduling).

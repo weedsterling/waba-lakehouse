@@ -6,6 +6,7 @@ __pycache__/
 venv/
 *.parquet
 spark-warehouse/
+spark/jars/*.jar
 metastore_db/
 derby.log
 .idea/
