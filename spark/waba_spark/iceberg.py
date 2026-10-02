@@ -85,3 +85,19 @@ def merge_idempotent(spark: SparkSession, df: DataFrame, spec: DatasetSpec, name
 
 def append(spark: SparkSession, df: DataFrame, table: str) -> None:
     df.writeTo(fq(table)).append()
+
+
+def overwrite_partitions(spark: SparkSession, df: DataFrame, table: str, partition_by: list) -> None:
+    """Écriture idempotente par remplacement dynamique des partitions présentes dans `df`.
+
+    Rejouer le job pour un pays réécrit exactement ses partitions (backfill sélectif),
+    sans toucher aux autres pays. Crée la table au premier passage."""
+    target = fq(table)
+    if not spark.catalog.tableExists(target):
+        (df.writeTo(target).using("iceberg").partitionedBy(*partition_by)
+           .tableProperty("format-version", "2")
+           .tableProperty("write.metadata.delete-after-commit.enabled", "true")
+           .tableProperty("write.metadata.previous-versions-max", "50")
+           .create())
+        return
+    df.writeTo(target).overwritePartitions()

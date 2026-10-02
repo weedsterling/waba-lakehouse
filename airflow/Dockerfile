@@ -12,7 +12,9 @@ COPY --from=spark /opt/spark /opt/spark
 COPY --from=spark /opt/java/openjdk /opt/java/openjdk
 COPY spark/jars/*.jar /opt/spark/jars/
 COPY spark/conf/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
-RUN chmod -R a+rX /opt/spark /opt/java/openjdk
+RUN chmod -R a+rX /opt/spark /opt/java/openjdk \
+    && apt-get update && apt-get install -y --no-install-recommends procps \
+    && rm -rf /var/lib/apt/lists/*          # `ps` requis par les scripts spark-submit
 
 ENV JAVA_HOME=/opt/java/openjdk \
     SPARK_HOME=/opt/spark \

@@ -202,6 +202,7 @@ docker compose up -d --build
 | DAG | Déclenchement | Rôle |
 |---|---|---|
 | `dag_ingest_raw` | toutes les 15 min + capteur de nouveaux fichiers MinIO | raw-landing → `bronze.*` ; publie l'asset `bronze` |
+| `dag_bronze_to_silver` | asset `bronze` (data-aware) | `silver.*` : dédoublonnage, conversion EUR (`silver.fx_rates`), jointures référentiels, indicateurs `is_orphan_*` / `is_outlier`, métriques `audit.dq_metrics` |
 
 Choix : **Airflow 3.3** (branche 2.x en fin de vie), image construite en copiant le client Spark et le JRE
 depuis l'image Spark (versions identiques driver/executors), Connections injectées par variables

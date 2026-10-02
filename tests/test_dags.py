@@ -41,3 +41,11 @@ def test_best_practices_on_every_dag(dagbag):
         for t in dag.tasks:
             assert t.retries >= 1, f"{dag.dag_id}.{t.task_id} sans retries"
             assert t.on_failure_callback, f"{dag.dag_id}.{t.task_id} sans alerte d'échec"
+
+
+def test_silver_dag_triggered_by_bronze_asset(dagbag):
+    dag = dagbag.dags["dag_bronze_to_silver"]
+    assert "countries" in dag.params
+    assert "bronze" in str(dag.timetable).lower() or "asset" in type(dag.timetable).__name__.lower()
+    task = dag.get_task("spark_bronze_to_silver")
+    assert any("silver" in str(o) for o in task.outlets)
