@@ -29,7 +29,11 @@ log = get_logger("waba.bronze_to_silver")
 # Spécifications de partitionnement construites à la demande : en PySpark, F.col() exige une
 # SparkSession active et ne peut donc pas être évalué à l'import du module.
 def fact_partition() -> list:
-    return [F.col("country_code"), F.days(F.col("event_ts"))]
+    # Partition mensuelle : ~24 partitions au lieu de ~730 partitions journalières pour quelques
+    # milliers de lignes -> fichiers de taille raisonnable et beaucoup moins d'écrivains Parquet
+    # ouverts simultanément (cause des OutOfMemoryError). L'élagage par date reste automatique
+    # grâce au partitionnement caché d'Iceberg (un filtre sur txn_date cible le bon mois).
+    return [F.col("country_code"), F.months(F.col("event_ts"))]
 
 
 def dim_partition() -> list:
@@ -74,7 +78,8 @@ def main(argv: list[str]) -> int:
     def publish(name: str, df, partition, flags: list[str] | None = None, release: bool = False) -> None:
         t0 = time.time()
         df = df.cache()
-        iceberg.overwrite_partitions(spark, df, f"{tgt}.{name}", partition)
+        cluster = ["country_code", "event_ts"] if "event_ts" in df.columns else ["country_code"]
+        iceberg.overwrite_partitions(spark, df, f"{tgt}.{name}", partition, cluster_by=cluster)
         rows = df.count()
         if flags:  # métriques collectées tout de suite (quelques lignes) : pas de recalcul en fin de job
             dq.extend(S.quality_metrics(df, name, flags).collect())

@@ -58,7 +58,7 @@ SPARK_CONF = {
     "spark.driver.host": "airflow-scheduler",
     "spark.driver.bindAddress": "0.0.0.0",
     "spark.driver.memory": "1g",
-    "spark.executor.memory": "2g",
+    "spark.executor.memory": "3g",          # 2 exécuteurs x 3g = SPARK_WORKER_MEMORY (6g)
     "spark.cores.max": "4",
 }
 
