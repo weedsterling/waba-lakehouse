@@ -204,6 +204,7 @@ docker compose up -d --build
 | `dag_ingest_raw` | toutes les 15 min + capteur de nouveaux fichiers MinIO | raw-landing → `bronze.*` ; publie l'asset `bronze` |
 | `dag_bronze_to_silver` | asset `bronze` (data-aware) | `silver.*` : dédoublonnage, conversion EUR (`silver.fx_rates`), jointures référentiels, indicateurs `is_orphan_*` / `is_outlier`, métriques `audit.dq_metrics` |
 | `dag_silver_to_gold` | asset `silver` (data-aware) | 7 KPIs `gold.*` (voir ci-dessous) ; publie l'asset `gold` |
+| `dag_regulatory_report` | tous les jours à 00h30 UTC | `reporting.bceao_prudential` (NPL, seuil 5 %) et `reporting.cima_technical` (loss ratio cumulé, seuil 70 %), exports CSV par régulateur dans `s3://lakehouse/exports/regulatory/`, alerte structurée par dépassement |
 
 Tous les jobs Spark passent par le pool Airflow **`spark` (1 emplacement)** : les runs déclenchés en
 rafale par les assets font la queue au lieu de se disputer les 6 Go du worker.

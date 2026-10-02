@@ -63,3 +63,26 @@ def test_spark_jobs_serialized_by_pool(dagbag):
     spark_tasks = [t for d in dagbag.dags.values() for t in d.tasks if isinstance(t, SparkSubmitOperator)]
     assert len(spark_tasks) >= 3
     assert all(t.pool == "spark" for t in spark_tasks)
+
+
+def test_regulatory_dag(dagbag):
+    dag = dagbag.dags["dag_regulatory_report"]
+    assert dag.timetable.expression == "30 0 * * *"
+    assert {"countries", "report_date"} <= set(dag.params)
+    assert dag.get_task("notify_breaches").upstream_task_ids == {"spark_regulatory_report"}
+
+
+@pytest.mark.parametrize("value,expected", [(None, "2026-10-03"), ("", "2026-10-03"), (" ", "2026-10-03"),
+                                            ("2026-09-30", "2026-09-30")])
+def test_regulatory_report_date_template(value, expected):
+    """Régression : une valeur blanche transmise par le formulaire ne doit pas atteindre spark-submit."""
+    from datetime import datetime
+
+    from airflow.sdk.definitions._internal.templater import FILTERS
+    from dag_regulatory_report import REPORT_DATE
+    from jinja2 import Environment
+
+    env = Environment()
+    env.filters.update(FILTERS)
+    run = type("Run", (), {"run_after": datetime(2026, 10, 3, 0, 30)})()
+    assert env.from_string(REPORT_DATE).render(params={"report_date": value}, dag_run=run) == expected
