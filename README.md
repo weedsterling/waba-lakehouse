@@ -138,7 +138,7 @@ Le log du job affiche `"inserted": 0` pour chaque dataset rejoué.
 ├── trino/catalog/lakehouse.properties
 ├── sql/level1_checks.sql       # requêtes de contrôle et d'analyse
 ├── scripts/                    # minio-init.sh, ingest.ps1, ingest.sh
-├── tests/                      # pytest : générateur + validation Spark
+├── tests/                      # pytest : générateur, validation, Silver, Gold, DAGs
 └── docs/                       # ROADMAP (installation + niveaux 2-4), ARCHITECTURE (write-up)
 ```
 
@@ -147,7 +147,7 @@ Le log du job affiche `"inserted": 0` pour chaque dataset rejoué.
 ```powershell
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-$env:PYTHONPATH="generator;spark"; pytest -q tests
+pytest -q            # pytest.ini fixe le PYTHONPATH (generator, spark)
 ```
 Les tests Spark nécessitent Java 17 (`JAVA_HOME`) ; ils sont ignorés si PySpark est absent.
 
@@ -203,6 +203,20 @@ docker compose up -d --build
 |---|---|---|
 | `dag_ingest_raw` | toutes les 15 min + capteur de nouveaux fichiers MinIO | raw-landing → `bronze.*` ; publie l'asset `bronze` |
 | `dag_bronze_to_silver` | asset `bronze` (data-aware) | `silver.*` : dédoublonnage, conversion EUR (`silver.fx_rates`), jointures référentiels, indicateurs `is_orphan_*` / `is_outlier`, métriques `audit.dq_metrics` |
+| `dag_silver_to_gold` | asset `silver` (data-aware) | 7 KPIs `gold.*` (voir ci-dessous) ; publie l'asset `gold` |
+
+Tous les jobs Spark passent par le pool Airflow **`spark` (1 emplacement)** : les runs déclenchés en
+rafale par les assets font la queue au lieu de se disputer les 6 Go du worker.
+
+| Table Gold | Grain | Formule |
+|---|---|---|
+| `daily_transaction_volume` | jour × pays × entité × flux × type | nb, échecs, montant EUR (hors échecs) |
+| `npl_ratio_by_country` | mois × pays × entité | encours des prêts en défaut (> 90 j) / encours total, photo fin de mois, seuil BCEAO 5 % |
+| `customer_arpu_monthly` | mois × pays × entité × segment | (commissions + intérêts) / clients actifs distincts |
+| `loss_ratio_by_product` | mois × pays × produit | sinistres payés / primes (+ cumul annuel), seuil CIMA 70 % |
+| `claims_processing_time` | mois × pays × IARD/Vie | jours ouvrés moyens, médiane, p90 (sinistres clos) |
+| `mobile_money_daily_flow` | jour × pays × opérateur | volume, montant, taux d'échec, utilisateurs actifs |
+| `cross_border_transfers` | semaine × corridor | nb, montant total/moyen, évolution S/S-1, corridor UEMOA |
 
 Choix : **Airflow 3.3** (branche 2.x en fin de vie), image construite en copiant le client Spark et le JRE
 depuis l'image Spark (versions identiques driver/executors), Connections injectées par variables

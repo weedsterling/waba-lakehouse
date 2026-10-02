@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-pytest.importorskip("airflow")
+pytest.importorskip("airflow.sdk")  # le dossier airflow/ du dépôt ne suffit pas
 os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "false")
 DAGS_DIR = os.path.join(os.path.dirname(__file__), "..", "airflow", "dags")
 sys.path.insert(0, DAGS_DIR)
@@ -49,3 +49,17 @@ def test_silver_dag_triggered_by_bronze_asset(dagbag):
     assert "bronze" in str(dag.timetable).lower() or "asset" in type(dag.timetable).__name__.lower()
     task = dag.get_task("spark_bronze_to_silver")
     assert any("silver" in str(o) for o in task.outlets)
+
+
+def test_gold_dag_triggered_by_silver_asset(dagbag):
+    dag = dagbag.dags["dag_silver_to_gold"]
+    assert "countries" in dag.params
+    task = dag.get_task("spark_silver_to_gold")
+    assert any("gold" in str(o) for o in task.outlets)
+
+
+def test_spark_jobs_serialized_by_pool(dagbag):
+    from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+    spark_tasks = [t for d in dagbag.dags.values() for t in d.tasks if isinstance(t, SparkSubmitOperator)]
+    assert len(spark_tasks) >= 3
+    assert all(t.pool == "spark" for t in spark_tasks)

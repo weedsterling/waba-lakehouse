@@ -16,6 +16,10 @@ log = logging.getLogger("waba.alerts")
 
 COUNTRIES = ["CI", "SN", "ML", "BF", "GN", "TG", "BJ", "GH"]
 JOBS_DIR = "/opt/waba/jobs"
+# Pool Airflow (1 emplacement, créé par airflow-init) : un seul job Spark à la fois sur le
+# cluster (6 Go / 4 cœurs). Les runs déclenchés en rafale par les assets font la queue
+# au lieu de se disputer la mémoire des exécuteurs.
+SPARK_POOL = "spark"
 
 # Assets (data-aware scheduling) : chaque couche publiée déclenche la suivante
 BRONZE = Asset("iceberg://lakehouse/bronze")
@@ -74,5 +78,6 @@ def spark_job(task_id: str, script: str, args: list[str], **kwargs) -> SparkSubm
         conf=SPARK_CONF,
         env_vars={"PYTHONPATH": "/opt/waba"},
         verbose=False,
+        pool=SPARK_POOL,
         **kwargs,
     )

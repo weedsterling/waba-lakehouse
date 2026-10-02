@@ -188,6 +188,7 @@ services:
         chown -R 50000:0 /opt/airflow/logs /opt/airflow/config
         chmod 600 /opt/airflow/config/passwords.json
         su airflow -s /bin/bash -c "PATH=$$PATH airflow db migrate"   # su réinitialise PATH : on le transmet
+        su airflow -s /bin/bash -c "PATH=$$PATH airflow pools set spark 1 'Un seul job Spark a la fois'"
         echo "Airflow initialisé"
     environment:
       <<: *airflow-env
