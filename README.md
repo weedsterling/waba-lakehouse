@@ -222,3 +222,22 @@ rafale par les assets font la queue au lieu de se disputer les 6 Go du worker.
 Choix : **Airflow 3.3** (branche 2.x en fin de vie), image construite en copiant le client Spark et le JRE
 depuis l'image Spark (versions identiques driver/executors), Connections injectées par variables
 d'environnement (`AIRFLOW_CONN_*`), enchaînement des DAGs par **assets** (data-aware scheduling).
+
+## Level 3 — Speed layer (en cours)
+
+| Service | URL | Rôle |
+|---|---|---|
+| `kafka` (KRaft) | `kafka:9092` (interne), `localhost:9094` (VM) | bus d'événements, 8 partitions par topic, clé = `country_code` |
+| `kafka-init` | — | crée les 11 topics (raw, silver, gold, DLQ), idempotent |
+| `kafka-ui` | http://IP-VM:8085 | exploration des topics (démo) |
+| `nifi` | https://IP-VM:8443/nifi | ListS3 → FetchS3Object → UpdateRecord (CSV→JSON + `ingestion_timestamp`, `source_file`) → PublishKafkaRecord |
+| `nifi-init` | — | construit le flux NiFi par l'API REST (`nifi/provision_flow.py`, flow-as-code) |
+
+**Partage de `raw-landing` entre batch et streaming (Lambda).** NiFi liste le bucket toutes les 5 s
+(état « Tracking Timestamps », aucun fichier publié deux fois). Le batch (`dag_ingest_raw`) n'ingère et
+n'archive que les fichiers déposés depuis plus de `waba_batch_min_age_minutes` minutes (Variable Airflow,
+défaut 5) : NiFi lit toujours un fichier avant son archivage, sans couplage entre les deux chaînes.
+
+```bash
+./scripts/kafka-check.sh                 # messages par topic + exemple
+```

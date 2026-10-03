@@ -217,6 +217,97 @@ services:
     <<: *airflow-common
     command: dag-processor
 
+  # ================================================================== LEVEL 3 : speed layer
+  kafka:
+    # KRaft (sans Zookeeper) : un seul nœud broker + contrôleur, suffisant pour la démonstration.
+    image: apache/kafka:3.8.1
+    hostname: kafka
+    environment:
+      CLUSTER_ID: lDmh9mBjRdGFrcF5HQXymg     # UUID base64 (22 car.), fixe : le volume reste valide
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # topics déclarés explicitement (kafka-init)
+      KAFKA_NUM_PARTITIONS: 8
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx768m
+    ports: ["9094:9094"]                  # accès depuis la VM (kcat, scripts de test)
+    volumes: [kafka-data:/var/lib/kafka/data]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  kafka-init:
+    image: apache/kafka:3.8.1
+    depends_on:
+      kafka: { condition: service_healthy }
+    volumes: [./scripts/kafka-init.sh:/kafka-init.sh:ro]
+    entrypoint: ["/bin/bash", "/kafka-init.sh"]
+    restart: "no"
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.1.0   # fork maintenu de provectus/kafka-ui
+    depends_on:
+      kafka: { condition: service_healthy }
+    environment:
+      KAFKA_CLUSTERS_0_NAME: waba
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      JAVA_OPTS: -Xmx256m
+    ports: ["8085:8080"]
+    restart: unless-stopped
+
+  nifi:
+    image: apache/nifi:1.28.1
+    hostname: nifi
+    depends_on:
+      kafka: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    environment:
+      SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_ADMIN_USER:-admin}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_ADMIN_PASSWORD:?définir NIFI_ADMIN_PASSWORD (12 caractères min.) dans .env}
+      NIFI_SENSITIVE_PROPS_KEY: ${NIFI_SENSITIVE_PROPS_KEY:?définir NIFI_SENSITIVE_PROPS_KEY dans .env}
+      NIFI_JVM_HEAP_INIT: 512m
+      NIFI_JVM_HEAP_MAX: 1g
+      NIFI_WEB_PROXY_HOST: localhost:8443,127.0.0.1:8443,${VM_HOST_IP:-192.168.127.128}:8443
+    ports: ["8443:8443"]
+    volumes:                              # état de ListS3 et files d'attente conservés au redémarrage
+      - nifi-conf:/opt/nifi/nifi-current/conf
+      - nifi-state:/opt/nifi/nifi-current/state
+      - nifi-db:/opt/nifi/nifi-current/database_repository
+      - nifi-flowfile:/opt/nifi/nifi-current/flowfile_repository
+      - nifi-content:/opt/nifi/nifi-current/content_repository
+      - nifi-provenance:/opt/nifi/nifi-current/provenance_repository
+    restart: unless-stopped
+
+  nifi-init:
+    # Flow-as-code : construit le flux MinIO -> Kafka via l'API REST NiFi (idempotent)
+    image: python:3.12-slim
+    depends_on:
+      nifi: { condition: service_started }
+      kafka-init: { condition: service_completed_successfully }
+    environment:
+      NIFI_ADMIN_USER: ${NIFI_ADMIN_USER:-admin}
+      NIFI_ADMIN_PASSWORD: ${NIFI_ADMIN_PASSWORD}
+      LAKEHOUSE_ACCESS_KEY: ${LAKEHOUSE_ACCESS_KEY}
+      LAKEHOUSE_SECRET_KEY: ${LAKEHOUSE_SECRET_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    volumes: [./nifi/provision_flow.py:/provision_flow.py:ro]
+    command: ["python", "-u", "/provision_flow.py"]
+    restart: "no"
+
 volumes:
   minio-data:
   iceberg-catalog:
@@ -224,3 +315,10 @@ volumes:
   airflow-db:
   airflow-logs:
   airflow-config:
+  kafka-data:
+  nifi-conf:
+  nifi-state:
+  nifi-db:
+  nifi-flowfile:
+  nifi-content:
+  nifi-provenance:

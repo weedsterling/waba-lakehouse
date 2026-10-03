@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from pyspark.sql import Row
 
@@ -43,6 +43,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--no-archive", action="store_true", help="Ne pas déplacer les fichiers après ingestion")
     p.add_argument("--namespace", default="raw",
                    help="Espace de noms Iceberg cible (raw au Level 1, bronze au Level 2)")
+    p.add_argument("--min-age-minutes", type=int, default=0,
+                   help="N'ingère (et n'archive) que les fichiers déposés depuis au moins N minutes "
+                        "(Lambda : NiFi lit raw-landing en continu, le batch passe après)")
     p.add_argument("--landing-bucket", default="raw-landing")
     p.add_argument("--archive-bucket", default="archive")
     args = p.parse_args(argv)
@@ -67,10 +70,11 @@ def _country_from_key(key: str) -> str | None:
 def ingest_dataset(spark, store: ObjectStore, name: str, args, batch_id: str) -> dict:
     spec = SPECS[name]
     bucket = args.archive_bucket if args.source == "archive" else args.landing_bucket
+    min_age = timedelta(minutes=args.min_age_minutes if args.source == "landing" else 0)
     if spec.is_referential:
-        objects = store.list_csv(bucket, f"{name}/")
+        objects = store.list_csv(bucket, f"{name}/", min_age)
     else:
-        objects = [o for cc in args.countries for o in store.list_csv(bucket, f"{name}/{cc}/")]
+        objects = [o for cc in args.countries for o in store.list_csv(bucket, f"{name}/{cc}/", min_age)]
     ctx = {"dataset": name, "namespace": args.namespace, "batch_id": batch_id, "files": len(objects)}
     if not objects:
         log.info("aucun fichier à ingérer", extra={"ctx": ctx})

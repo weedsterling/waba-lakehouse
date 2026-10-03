@@ -57,6 +57,8 @@ with DAG(
             "--namespace", "bronze",
             "--countries", "{{ params.countries | join(',') }}",
             "--source", "{{ params.source }}",
+            # Lambda : les fichiers de moins de N minutes restent dans raw-landing pour NiFi (speed layer)
+            "--min-age-minutes", "{{ var.value.get('waba_batch_min_age_minutes', '5') }}",
         ],
         outlets=[BRONZE],
         execution_timeout=timedelta(minutes=45),

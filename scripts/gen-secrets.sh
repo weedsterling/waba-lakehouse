@@ -20,6 +20,8 @@ declare -A GEN=(
   [AIRFLOW_FERNET_KEY]="$(fernet)"
   [AIRFLOW_JWT_SECRET]="$(rand_hex 32)"
   [AIRFLOW_API_SECRET_KEY]="$(rand_hex 32)"
+  [NIFI_ADMIN_PASSWORD]="$(rand_hex 12)"
+  [NIFI_SENSITIVE_PROPS_KEY]="$(rand_hex 16)"
 )
 
 # Ajoute les clés présentes dans .env.example mais absentes de .env (nouveaux niveaux)
@@ -36,4 +38,5 @@ for key in "${!GEN[@]}"; do
   fi
 done
 chmod 600 .env
+echo "Mot de passe de l'interface NiFi (utilisateur admin) : $(grep '^NIFI_ADMIN_PASSWORD=' .env | cut -d= -f2)"
 echo "Mot de passe de l'interface Airflow (utilisateur admin) : $(grep '^AIRFLOW_ADMIN_PASSWORD=' .env | cut -d= -f2)"

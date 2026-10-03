@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import boto3
 from botocore.client import Config
@@ -64,6 +65,7 @@ class S3Object:
     key: str
     etag: str
     size: int
+    last_modified: datetime | None = None
 
     @property
     def s3a(self) -> str:
@@ -82,12 +84,15 @@ class ObjectStore:
                           retries={"max_attempts": 5, "mode": "standard"}),
         )
 
-    def list_csv(self, bucket: str, prefix: str) -> list[S3Object]:
+    def list_csv(self, bucket: str, prefix: str, min_age: timedelta = timedelta(0)) -> list[S3Object]:
+        """Fichiers CSV non vides. `min_age` : ignore les objets plus récents (architecture Lambda :
+        laisse à NiFi le temps de lire un fichier avant que le batch ne l'archive)."""
+        cutoff = datetime.now(timezone.utc) - min_age
         out = []
         for page in self.client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
             for o in page.get("Contents", []):
-                if o["Key"].endswith(".csv") and o["Size"] > 0:
-                    out.append(S3Object(bucket, o["Key"], o["ETag"].strip('"'), o["Size"]))
+                if o["Key"].endswith(".csv") and o["Size"] > 0 and o["LastModified"] <= cutoff:
+                    out.append(S3Object(bucket, o["Key"], o["ETag"].strip('"'), o["Size"], o["LastModified"]))
         return sorted(out, key=lambda o: o.key)
 
     def move(self, obj: S3Object, dest_bucket: str) -> None:
