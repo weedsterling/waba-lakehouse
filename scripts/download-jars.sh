@@ -18,6 +18,11 @@ JARS=(
   "org/apache/iceberg/iceberg-aws-bundle/1.6.1/iceberg-aws-bundle-1.6.1.jar"
   "org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar"
   "com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar"
+  # Level 3 : connecteur Kafka de Spark Structured Streaming (versions alignées sur Spark 3.5.3)
+  "org/apache/spark/spark-sql-kafka-0-10_2.12/3.5.3/spark-sql-kafka-0-10_2.12-3.5.3.jar"
+  "org/apache/spark/spark-token-provider-kafka-0-10_2.12/3.5.3/spark-token-provider-kafka-0-10_2.12-3.5.3.jar"
+  "org/apache/kafka/kafka-clients/3.4.1/kafka-clients-3.4.1.jar"
+  "org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar"
 )
 
 mkdir -p "$DEST"

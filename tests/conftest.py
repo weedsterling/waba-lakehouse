@@ -62,7 +62,7 @@ def silver(spark, bronze):
     products = S.build_products(bronze["products"]).cache()
     accounts = S.build_accounts(bronze["accounts"], customers, fx, "2026-09-30").cache()
     return {
-        "fx": fx, "customers": customers, "accounts": accounts,
+        "fx": fx, "customers": customers, "accounts": accounts, "branches": branches, "products": products,
         "bank": S.build_bank_transactions(bronze["bank_transactions"], accounts, branches, fx).cache(),
         "ins": S.build_insurance_operations(bronze["insurance_operations"], customers, products, fx).cache(),
         "mm": S.build_mobile_money(bronze["mobile_money_payments"], customers, fx).cache(),

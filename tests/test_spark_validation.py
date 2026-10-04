@@ -12,21 +12,12 @@ import pandas as pd
 import pytest
 
 pyspark = pytest.importorskip("pyspark")
-from pyspark.sql import SparkSession  # noqa: E402
 
 from waba_gen.referentials import generate_referentials  # noqa: E402
 from waba_gen.storage import df_to_csv_bytes  # noqa: E402
 from waba_gen.transactions import Pools, generate_transactions, inject_anomalies  # noqa: E402
 from waba_spark import validation as V  # noqa: E402
 from waba_spark.schemas import SPECS  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def spark():
-    s = (SparkSession.builder.master("local[2]").appName("tests")
-         .config("spark.sql.shuffle.partitions", "2").config("spark.ui.enabled", "false").getOrCreate())
-    yield s
-    s.stop()
 
 
 @pytest.fixture(scope="module")

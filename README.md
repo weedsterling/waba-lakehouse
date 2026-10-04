@@ -232,6 +232,13 @@ d'environnement (`AIRFLOW_CONN_*`), enchaînement des DAGs par **assets** (data-
 | `kafka-ui` | http://IP-VM:8085 | exploration des topics (démo) |
 | `nifi` | https://IP-VM:8443/nifi | ListS3 → FetchS3Object → UpdateRecord (CSV→JSON + `ingestion_timestamp`, `source_file`) → PublishKafkaRecord |
 | `nifi-init` | — | construit le flux NiFi par l'API REST (`nifi/provision_flow.py`, flow-as-code) |
+| `stream-raw-silver` | — | Job 1 Spark Streaming : raw-* → validation (DLQ `dlq-financial-events`) → Silver (EUR, enrichissement) → topics `silver-*` + tables Iceberg `silver.rt_*` |
+
+**Job 1 — choix.** Chaque micro-lot réutilise les contrats, la validation et les transformations Silver du
+batch (une seule définition des règles). Dédoublonnage par identifiant dans une fenêtre de 10 min
+(watermark sur l'horodatage Kafka). Tables `silver.rt_*` séparées des tables batch : le batch reste la
+source de vérité et réécrit ses partitions sans conflit d'écriture avec le flux. MERGE idempotent +
+checkpoint MinIO : un redémarrage ne perd ni ne duplique rien.
 
 **Partage de `raw-landing` entre batch et streaming (Lambda).** NiFi liste le bucket toutes les 5 s
 (état « Tracking Timestamps », aucun fichier publié deux fois). Le batch (`dag_ingest_raw`) n'ingère et

@@ -73,17 +73,25 @@ def to_eur(df: DataFrame, fx: DataFrame, amount_cols: list[str], date_col: str =
     return out
 
 
-def flag_outliers(df: DataFrame, amount_col: str = "amount_eur", k: float = 1.5) -> DataFrame:
-    """is_outlier = montant au-delà de la barrière de Tukey (Q3 + k·IQR) calculée par pays
-    sur l'échelle logarithmique — adaptée aux montants financiers (distribution log-normale).
-    Les valeurs aberrantes sont SIGNALÉES pour revue, jamais supprimées."""
+def outlier_fences(df: DataFrame, amount_col: str = "amount_eur", k: float = 1.5) -> DataFrame:
+    """Barrière de Tukey (Q3 + k·IQR) par pays sur l'échelle logarithmique — adaptée aux montants
+    financiers (distribution log-normale). Une ligne par pays : (country_code, _fence)."""
     log_amt = F.log1p(F.col(amount_col))
-    q = (df.groupBy("country_code")
-           .agg(F.percentile_approx(log_amt, [0.25, 0.75], 10_000).alias("_q"))
-           .select("country_code",
-                   (F.col("_q")[1] + F.lit(k) * (F.col("_q")[1] - F.col("_q")[0])).alias("_fence")))
-    return (df.join(F.broadcast(q), "country_code", "left")
-              .withColumn("is_outlier", F.coalesce(log_amt > F.col("_fence"), F.lit(False)))
+    return (df.groupBy("country_code")
+              .agg(F.percentile_approx(log_amt, [0.25, 0.75], 10_000).alias("_q"))
+              .select("country_code", (F.col("_q")[1] + F.lit(k) * (F.col("_q")[1] - F.col("_q")[0])).alias("_fence")))
+
+
+def flag_outliers(df: DataFrame, amount_col: str = "amount_eur", k: float = 1.5,
+                  fences: DataFrame | None = None) -> DataFrame:
+    """is_outlier = montant au-delà de la barrière de Tukey du pays. Les valeurs aberrantes sont
+    SIGNALÉES pour revue, jamais supprimées.
+
+    `fences` : barrières précalculées (streaming : calculées sur l'historique Silver, car un
+    micro-lot de quelques lignes ne permet pas d'estimer des quartiles fiables)."""
+    fences = fences if fences is not None else outlier_fences(df, amount_col, k)
+    return (df.join(F.broadcast(fences), "country_code", "left")
+              .withColumn("is_outlier", F.coalesce(F.log1p(F.col(amount_col)) > F.col("_fence"), F.lit(False)))
               .drop("_fence"))
 
 
@@ -140,7 +148,7 @@ def build_accounts(accounts: DataFrame, customers_silver: DataFrame, fx: DataFra
 # Faits (transactions)
 # --------------------------------------------------------------------------- #
 def build_bank_transactions(bank: DataFrame, accounts_silver: DataFrame, branches_silver: DataFrame,
-                            fx: DataFrame) -> DataFrame:
+                            fx: DataFrame, fences: DataFrame | None = None) -> DataFrame:
     t = with_time_columns(dedup_latest(bank, "transaction_id"))
     acc = accounts_silver.select("account_id", "customer_id", "account_type", "customer_segment")
     br = branches_silver.select("branch_id", F.col("city").alias("branch_city"),
@@ -151,7 +159,7 @@ def build_bank_transactions(bank: DataFrame, accounts_silver: DataFrame, branche
           .withColumn("is_orphan_branch", F.col("_branch_found").isNull())
           .withColumn("customer_segment", F.coalesce("customer_segment", F.lit(UNKNOWN)))
           .withColumn("channel", F.coalesce("channel", F.lit(UNKNOWN))))
-    t = flag_outliers(to_eur(t, fx, ["amount", "fee_amount"]))
+    t = flag_outliers(to_eur(t, fx, ["amount", "fee_amount"]), fences=fences)
     return _silver_ts(t.select(
         "transaction_id", "event_ts", "txn_date", "txn_month", "country_code", "entity_type",
         "account_id", "beneficiary_account", "customer_id", "customer_segment", "account_type",
@@ -161,7 +169,7 @@ def build_bank_transactions(bank: DataFrame, accounts_silver: DataFrame, branche
 
 
 def build_insurance_operations(ops: DataFrame, customers_silver: DataFrame, products_silver: DataFrame,
-                               fx: DataFrame) -> DataFrame:
+                               fx: DataFrame, fences: DataFrame | None = None) -> DataFrame:
     o = with_time_columns(dedup_latest(ops, "operation_id"))
     cust = customers_silver.select("customer_id", F.col("segment").alias("customer_segment"))
     prod = products_silver.select("country_code", F.col("product_code").alias("product_line"), "product_id")
@@ -174,7 +182,7 @@ def build_insurance_operations(ops: DataFrame, customers_silver: DataFrame, prod
           .withColumn("is_premium", F.col("operation_type").isin("PREMIUM_PAYMENT", "POLICY_RENEWAL"))
           .withColumn("is_claim_paid", F.col("operation_type") == "CLAIM_PAYMENT")
           .withColumn("is_claim", F.col("operation_type").isin("CLAIM_SUBMISSION", "CLAIM_PAYMENT")))
-    o = flag_outliers(to_eur(o, fx, ["amount"]))
+    o = flag_outliers(to_eur(o, fx, ["amount"]), fences=fences)
     return _silver_ts(o.select(
         "operation_id", "event_ts", "txn_date", "txn_month", "country_code", "entity_type", "customer_id",
         "customer_segment", "account_id", "operation_type", "product_line", "insurance_branch", "product_id",
@@ -183,7 +191,8 @@ def build_insurance_operations(ops: DataFrame, customers_silver: DataFrame, prod
         "_source_file", "_batch_id"))
 
 
-def build_mobile_money(mm: DataFrame, customers_silver: DataFrame, fx: DataFrame) -> DataFrame:
+def build_mobile_money(mm: DataFrame, customers_silver: DataFrame, fx: DataFrame,
+                       fences: DataFrame | None = None) -> DataFrame:
     m = with_time_columns(dedup_latest(mm, "payment_id"))
     snd = customers_silver.select(F.col("customer_id").alias("sender_id"),
                                   F.col("segment").alias("sender_segment"))
@@ -198,7 +207,7 @@ def build_mobile_money(mm: DataFrame, customers_silver: DataFrame, fx: DataFrame
           .withColumn("corridor", F.concat_ws("-", "sender_country", "receiver_country"))
           .withColumn("txn_hour", F.hour("event_ts"))
           .withColumn("txn_week", F.to_date(F.date_trunc("week", "event_ts"))))
-    m = flag_outliers(to_eur(m, fx, ["amount", "fee_amount"]))
+    m = flag_outliers(to_eur(m, fx, ["amount", "fee_amount"]), fences=fences)
     return _silver_ts(m.select(
         "payment_id", "event_ts", "txn_date", "txn_week", "txn_month", "txn_hour", "country_code",
         "entity_type", "sender_id", "sender_segment", "receiver_id", "sender_country", "receiver_country",
@@ -208,7 +217,7 @@ def build_mobile_money(mm: DataFrame, customers_silver: DataFrame, fx: DataFrame
 
 
 def build_loan_repayments(loans: DataFrame, accounts_silver: DataFrame, products_silver: DataFrame,
-                          fx: DataFrame, default_rate: float = 0.12) -> DataFrame:
+                          fx: DataFrame, default_rate: float = 0.12, fences: DataFrame | None = None) -> DataFrame:
     """Ajoute l'encours du prêt (solde du compte LOAN) et la part d'intérêts du paiement.
 
     Hypothèse documentée : interest_paid = amount_paid × r / (1 + r), r = taux annuel du produit
@@ -228,7 +237,7 @@ def build_loan_repayments(loans: DataFrame, accounts_silver: DataFrame, products
     ln = (ln.withColumn("interest_paid_eur",
                         F.round(F.col("amount_paid_eur") * F.col("interest_rate") / (1 + F.col("interest_rate")), 2))
             .withColumn("is_default", F.col("repayment_status") == "DEFAULT"))
-    ln = flag_outliers(ln, "amount_due_eur")
+    ln = flag_outliers(ln, "amount_due_eur", fences=fences)
     return _silver_ts(ln.select(
         "repayment_id", "event_ts", "txn_date", "txn_month", "country_code", "entity_type", "loan_account_id",
         "customer_id", "customer_segment", "loan_type", "repayment_status", "is_default", "due_date",

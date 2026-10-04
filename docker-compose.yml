@@ -122,8 +122,8 @@ services:
     environment:
       <<: *s3-env
       PII_HASH_SALT: ${PII_HASH_SALT}
-      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-4}
-      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-6g}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-6}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-9g}
       SPARK_NO_DAEMONIZE: "true"
     ports: ["8081:8081"]
     restart: unless-stopped
@@ -307,6 +307,42 @@ services:
     volumes: [./nifi/provision_flow.py:/provision_flow.py:ro]
     command: ["python", "-u", "/provision_flow.py"]
     restart: "no"
+
+  stream-raw-silver:
+    # Job 1 du speed layer : processus permanent (pas une tâche Airflow) relancé automatiquement ;
+    # reprise exacte depuis le checkpoint MinIO. Au Level 4 : SparkApplication (Spark Operator).
+    image: waba/spark:3.5.3-iceberg1.6.1
+    pull_policy: never
+    hostname: stream-raw-silver           # joignable par les executors (driver en mode client)
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+      spark-master: { condition: service_started }
+    environment:
+      <<: *s3-env
+      PII_HASH_SALT: ${PII_HASH_SALT}
+      PYTHONPATH: /opt/waba
+      KAFKA_BOOTSTRAP: kafka:9092
+    command:
+      - /opt/spark/bin/spark-submit
+      - --conf
+      - spark.driver.host=stream-raw-silver
+      - --conf
+      - spark.driver.bindAddress=0.0.0.0
+      - --conf
+      - spark.driver.memory=768m
+      - --conf
+      - spark.cores.max=1                 # 1 cœur réservé en permanence : le batch garde les siens
+      - --conf
+      - spark.executor.cores=1
+      - --conf
+      - spark.executor.memory=1g
+      - --conf
+      - spark.sql.shuffle.partitions=4    # état de dédoublonnage : 4 partitions (figé par le checkpoint)
+      - /opt/waba/jobs/stream_raw_to_silver.py
+    volumes:
+      - ./spark/jobs:/opt/waba/jobs:ro
+      - ./spark/waba_spark:/opt/waba/waba_spark:ro
+    restart: unless-stopped
 
 volumes:
   minio-data:
