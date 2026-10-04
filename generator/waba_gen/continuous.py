@@ -8,7 +8,9 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
+import pandas as pd
 
+from .fraud import fraud_scenarios
 from .referentials import Referentials
 from .storage import LakeStorage
 from .transactions import Pools, generate_transactions
@@ -32,13 +34,14 @@ class ContinuousGenerator:
         return self._thread is not None and self._thread.is_alive()
 
     def start(self, datasets: list[str], countries: list[str], rows_per_batch: int,
-              min_interval: int, max_interval: int, anomaly_rate: float = 0.0) -> None:
+              min_interval: int, max_interval: int, anomaly_rate: float = 0.0,
+              fraud: bool = False) -> None:
         if self.running:
             return
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._loop, name="waba-continuous", daemon=True,
-            args=(datasets, countries, rows_per_batch, min_interval, max_interval, anomaly_rate))
+            args=(datasets, countries, rows_per_batch, min_interval, max_interval, anomaly_rate, fraud))
         self._thread.start()
 
     def stop(self) -> None:
@@ -46,16 +49,23 @@ class ContinuousGenerator:
         if self._thread:
             self._thread.join(timeout=5)
 
-    def _loop(self, datasets, countries, rows_per_batch, min_iv, max_iv, anomaly_rate) -> None:
+    def _loop(self, datasets, countries, rows_per_batch, min_iv, max_iv, anomaly_rate, fraud) -> None:
         rng = np.random.default_rng()
+        lot = 0
         while not self._stop.is_set():
+            lot += 1
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             try:
+                # Scénarios de démonstration : fraude + AML à chaque micro-lot, ruée sur les retraits
+                # au 1er micro-lot puis tous les 5 (démo déterministe de l'alerte de liquidité)
+                extra = fraud_scenarios(self.pools, countries, now, rng, bank_run=lot % 5 == 1) if fraud else {}
                 for ds in datasets:
                     frames = generate_transactions(
                         self.ref, ds, countries, rows_per_batch,
                         start=now - timedelta(seconds=max_iv), end=now,
                         anomaly_rate=anomaly_rate, seed=int(rng.integers(0, 2**31)), pools=self.pools)
+                    for cc, df in extra.get(ds, {}).items():
+                        frames[cc] = pd.concat([frames[cc], df], ignore_index=True) if cc in frames else df
                     keys = self.storage.upload_transactions(ds, frames)
                     self.batches += 1
                     self.rows += sum(len(f) for f in frames.values())

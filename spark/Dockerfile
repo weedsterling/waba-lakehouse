@@ -6,14 +6,15 @@ USER root
 # JARs Iceberg + S3A pré-téléchargés et vérifiés (SHA-1) par scripts/download-jars.sh :
 # build reproductible et indépendant de la qualité du réseau.
 COPY jars/*.jar /opt/spark/jars/
-RUN for j in iceberg-spark-runtime-3.5_2.12-1.6.1 iceberg-aws-bundle-1.6.1 hadoop-aws-3.3.4 aws-java-sdk-bundle-1.12.262; do \
+RUN for j in iceberg-spark-runtime-3.5_2.12-1.6.1 iceberg-aws-bundle-1.6.1 hadoop-aws-3.3.4 aws-java-sdk-bundle-1.12.262 \
+             spark-sql-kafka-0-10_2.12-3.5.3 kafka-clients-3.4.1 commons-pool2-2.11.1; do \
       test -s /opt/spark/jars/$j.jar || { echo "JAR manquant : $j — lancer ./scripts/download-jars.sh"; exit 1; }; \
     done && chmod 644 /opt/spark/jars/*.jar
 
 COPY requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --retries 10 --timeout 60 -r /tmp/requirements.txt
 
-COPY conf/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
+COPY conf/spark-defaults.conf conf/log4j2.properties /opt/spark/conf/
 COPY waba_spark /opt/waba/waba_spark
 COPY jobs /opt/waba/jobs
 

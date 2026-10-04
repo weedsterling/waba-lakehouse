@@ -4,18 +4,22 @@
   * dédoublonnage par identifiant métier dans une fenêtre de 10 min (état Spark, watermark) ;
   * micro-lot (foreachBatch) : typage + validation (règles du Level 1) -> DLQ dlq-financial-events,
     puis transformations Silver du Level 2 (EUR, enrichissement référentiels, is_outlier) ;
-  * double écriture : topics silver-* (Kafka) ET tables Iceberg silver.rt_* (MERGE idempotent).
+  * double écriture : tables Iceberg silver.rt_* (append exactement-une-fois, cf. iceberg.append_once)
+    ET topics silver-* (Kafka) ; les 4 types de transactions sont traités en parallèle.
 
 Le watermark porte sur l'horodatage Kafka (arrivée) et non sur la date métier : le générateur produit
 des dates métier étalées sur plusieurs mois, qui seraient toutes considérées « en retard ».
 Reprise après incident : checkpoint (offsets + état de dédoublonnage) sur MinIO ; un micro-lot rejoué
-ne crée pas de doublon dans Iceberg (MERGE) et les consommateurs Kafka dédoublonnent par identifiant.
+est reconnu par son numéro (propriété du snapshot Iceberg) et n'est pas réécrit ; côté Kafka, les
+consommateurs dédoublonnent par identifiant.
 """
 from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -40,11 +44,16 @@ class Reference:
 
     def __init__(self, spark: SparkSession):
         self.spark, self.loaded_at, self.frames = spark, 0.0, {}
+        self.lock = threading.Lock()
 
     def _t(self, name: str) -> DataFrame:
         return self.spark.table(iceberg.fq(f"silver.{name}"))
 
     def get(self) -> dict[str, DataFrame]:
+        with self.lock:
+            return self._get()
+
+    def _get(self) -> dict[str, DataFrame]:
         if time.time() - self.loaded_at < DIM_REFRESH_S:
             return self.frames
         for df in self.frames.values():
@@ -66,17 +75,8 @@ class Reference:
         return self.frames
 
 
-def merge_rt(spark: SparkSession, df: DataFrame, dataset: str) -> None:
-    table, key = iceberg.fq(ST.rt_table(dataset)), SPECS[dataset].id_col
-    if not spark.catalog.tableExists(table):
-        (df.limit(0).writeTo(table).using("iceberg")
-           .partitionedBy(F.col("country_code"), F.days(F.col("event_ts")))
-           .tableProperty("format-version", "2").tableProperty("write.merge.mode", "merge-on-read")
-           .create())
-    df.createOrReplaceTempView("_rt_batch")
-    spark.sql(f"""MERGE INTO {table} t USING _rt_batch s
-                  ON t.{key} = s.{key} AND t.country_code = s.country_code
-                  WHEN NOT MATCHED THEN INSERT *""")
+def rt_partition() -> list:
+    return [F.col("country_code"), F.days(F.col("event_ts"))]
 
 
 def to_topic(df: DataFrame, topic: str) -> None:
@@ -85,33 +85,55 @@ def to_topic(df: DataFrame, topic: str) -> None:
        .option("topic", topic).save())
 
 
-def process_batch(ref: Reference):
+def process_dataset(spark: SparkSession, batch: DataFrame, topic: str, dataset: str, dims: dict,
+                    query_id: str, batch_id: int) -> dict | None:
+    """Un type de transaction d'un micro-lot : validation -> DLQ, Silver -> Iceberg + Kafka."""
+    spec, tag, t = SPECS[dataset], f"stream-{batch_id}", {}
+    t0 = time.time()
+    parsed = ST.parse_topic(batch.filter(F.col("_topic") == topic), spec).persist()
+    n, latency = parsed.agg(F.count("*"), ST.latency_seconds()).first()
+    if n == 0:
+        parsed.unpersist()
+        return None
+    valid, rejected = V.validate(parsed, spec)
+    rejected = rejected.persist()
+    n_dlq = rejected.count()
+    if n_dlq:
+        to_topic(ST.to_dlq(rejected, spec, tag), ST.DLQ_TOPIC)
+    t["validate_s"] = round(time.time() - t0, 1)
+    t1 = time.time()
+    silver = ST.build_silver(dataset, ST.bronze_like(valid, spec, tag), dims, dims["fx"],
+                             dims[f"fences_{dataset}"]).persist()
+    n_silver = silver.count()
+    t["silver_s"] = round(time.time() - t1, 1)
+    t2 = time.time()
+    # Ordre important : Iceberg d'abord (idempotent), puis Kafka (au moins une fois, consommateurs
+    # dédoublonnant par identifiant) -> un rejeu ne crée jamais de doublon dans le lakehouse.
+    iceberg.append_once(spark, silver, ST.rt_table(dataset), rt_partition(), query_id, batch_id)
+    t["iceberg_s"] = round(time.time() - t2, 1)
+    t3 = time.time()
+    if dataset in ST.SILVER_TOPICS:
+        to_topic(ST.to_kafka(silver), ST.SILVER_TOPICS[dataset])
+    t["kafka_s"] = round(time.time() - t3, 1)
+    for df in (silver, rejected, parsed):
+        df.unpersist()
+    return {"read": n, "dlq": n_dlq, "silver": n_silver, "max_latency_s": latency, **t}
+
+
+def process_batch(ref: Reference, run: dict):
     def _run(batch: DataFrame, batch_id: int) -> None:
+        while run.get("query_id") is None:      # identifiant connu juste après start()
+            time.sleep(0.2)
         spark, t0 = batch.sparkSession, time.time()
         batch = batch.persist()
-        tag, stats = f"stream-{batch_id}", {}
         dims = ref.get()
-        for topic, dataset in ST.RAW_TOPICS.items():
-            spec = SPECS[dataset]
-            parsed = ST.parse_topic(batch.filter(F.col("_topic") == topic), spec).persist()
-            n = parsed.count()
-            if n == 0:
-                parsed.unpersist()
-                continue
-            valid, rejected = V.validate(parsed, spec)
-            n_dlq = rejected.count()
-            if n_dlq:
-                to_topic(ST.to_dlq(rejected, spec, tag), ST.DLQ_TOPIC)
-            silver = ST.build_silver(dataset, ST.bronze_like(valid, spec, tag), dims, dims["fx"],
-                                     dims[f"fences_{dataset}"]).persist()
-            merge_rt(spark, silver, dataset)
-            if dataset in ST.SILVER_TOPICS:
-                to_topic(ST.to_kafka(silver), ST.SILVER_TOPICS[dataset])
-            stats[dataset] = {"read": n, "dlq": n_dlq, "silver": silver.count(),
-                              "max_latency_s": parsed.agg(ST.latency_seconds()).first()[0]}
-            silver.unpersist()
-            parsed.unpersist()
+        # Les 4 types de transactions sont indépendants : traités en parallèle (jobs Spark concurrents)
+        with ThreadPoolExecutor(max_workers=len(ST.RAW_TOPICS)) as pool:
+            futures = {ds: pool.submit(process_dataset, spark, batch, topic, ds, dims, run["query_id"], batch_id)
+                       for topic, ds in ST.RAW_TOPICS.items()}
+            stats = {ds: f.result() for ds, f in futures.items()}
         batch.unpersist()
+        stats = {k: v for k, v in stats.items() if v}
         if stats:
             log.info("micro-lot traité", extra={"ctx": {"batch_id": batch_id, "duration_s": round(time.time() - t0, 1),
                                                         "datasets": stats}})
@@ -128,11 +150,13 @@ def main() -> int:
            .option("maxOffsetsPerTrigger", 20000)        # borne la taille d'un micro-lot (back-pressure)
            .option("failOnDataLoss", "false")
            .load())
-    query = (ST.deduplicated_events(raw).writeStream.foreachBatch(process_batch(Reference(spark)))
+    run: dict = {}
+    query = (ST.deduplicated_events(raw).writeStream.foreachBatch(process_batch(Reference(spark), run))
              .option("checkpointLocation", CHECKPOINT)
              .trigger(processingTime=TRIGGER)
              .queryName("raw_to_silver")
              .start())
+    run["query_id"] = str(query.id)       # stable tant que le checkpoint est conservé
     log.info("streaming démarré", extra={"ctx": {"topics": list(ST.RAW_TOPICS), "checkpoint": CHECKPOINT}})
     query.awaitTermination()
     return 0

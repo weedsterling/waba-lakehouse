@@ -204,6 +204,9 @@ with tab_stream:
         rows = c1.number_input("Lignes par micro-lot (par type)", 10, 10_000, 200, step=10)
         interval = c2.slider("Intervalle (secondes)", 10, 60, (10, 30))
         anomaly = st.slider("Taux d'anomalies", 0.0, 0.05, 0.0, step=0.005, format="%.3f", key="stream_anom")
+        fraud = st.checkbox("Injecter des scénarios de fraude / AML / liquidité (démo Level 3)", key="stream_fraud",
+                            help="Rafale de gros virements, virement > seuil AML, paiement depuis un pays inhabituel, "
+                                 "sinistre > 3 x la prime ; ruée sur les retraits au 1er micro-lot puis tous les 5.")
 
         gen: ContinuousGenerator | None = holder["gen"]
         running = gen is not None and gen.running
@@ -211,7 +214,7 @@ with tab_stream:
         if b1.button("▶️ Démarrer", key="btn_start", disabled=running or not (minio_ok and datasets and countries)):
             ref, _ = get_referentials(cache.dir.stat().st_mtime)
             gen = ContinuousGenerator(storage, ref)
-            gen.start(datasets, countries, int(rows), interval[0], interval[1], anomaly)
+            gen.start(datasets, countries, int(rows), interval[0], interval[1], anomaly, fraud)
             holder["gen"] = gen
             st.rerun()
         if b2.button("⏹️ Arrêter", key="btn_stop", disabled=not running):

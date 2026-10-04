@@ -234,10 +234,26 @@ d'environnement (`AIRFLOW_CONN_*`), enchaînement des DAGs par **assets** (data-
 | `nifi-init` | — | construit le flux NiFi par l'API REST (`nifi/provision_flow.py`, flow-as-code) |
 | `stream-raw-silver` | — | Job 1 Spark Streaming : raw-* → validation (DLQ `dlq-financial-events`) → Silver (EUR, enrichissement) → topics `silver-*` + tables Iceberg `silver.rt_*` |
 
+| `stream-silver-gold` | — | Job 2 : fraude (`gold-fraud-alerts`), AML (`gold-aml-events`), liquidité (`gold-liquidity-alerts`) + tables Iceberg `gold.rt_*` |
+
+**Job 2 — règles** (seuils surchargeables par variables d'environnement) :
+
+| Règle | Définition |
+|---|---|
+| `LARGE_TXN_BURST` | ≥ 3 transactions > 500 000 XOF (équiv. EUR) d'un même compte, fenêtre glissante 5 min / 1 min |
+| `UNUSUAL_COUNTRY` | paiement mobile money depuis un pays absent du profil client (résidence + historique Silver) |
+| `CLAIM_GT_3X_PREMIUM` | sinistre > 3 × prime annuelle (primes 12 mois, mensualités annualisées) |
+| AML | virement > 1 000 000 XOF (UEMOA) / 5 000 GHS (Ghana), banque et mobile money |
+| `LIQUIDITY_COVERAGE` | sorties nettes d'un pays sur 5 min > 1 % des dépôts (comptes courants + épargne) |
+
+Le générateur (onglet « Flux continu ») peut injecter un scénario par règle à chaque micro-lot
+(case « Injecter des scénarios de fraude ») : démonstration déterministe.
+
 **Job 1 — choix.** Chaque micro-lot réutilise les contrats, la validation et les transformations Silver du
 batch (une seule définition des règles). Dédoublonnage par identifiant dans une fenêtre de 10 min
 (watermark sur l'horodatage Kafka). Tables `silver.rt_*` séparées des tables batch : le batch reste la
-source de vérité et réécrit ses partitions sans conflit d'écriture avec le flux. MERGE idempotent +
+source de vérité et réécrit ses partitions sans conflit d’écriture avec le flux. Append exactement-une-fois
+(numéro de micro-lot gravé dans le snapshot Iceberg, sans MERGE) +
 checkpoint MinIO : un redémarrage ne perd ni ne duplique rien.
 
 **Partage de `raw-landing` entre batch et streaming (Lambda).** NiFi liste le bucket toutes les 5 s

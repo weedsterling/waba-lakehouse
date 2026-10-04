@@ -108,3 +108,45 @@ def overwrite_partitions(spark: SparkSession, df: DataFrame, table: str, partiti
            .create())
         return
     df.writeTo(target).overwritePartitions()
+
+
+# --------------------------------------------------------------------------- #
+# Streaming : écriture exactement-une-fois sans MERGE
+# --------------------------------------------------------------------------- #
+STREAM_QUERY_PROP, STREAM_BATCH_PROP = "waba.stream-query-id", "waba.stream-batch-id"
+
+
+def ensure_stream_table(spark: SparkSession, df: DataFrame, table: str, partition_by: list) -> str:
+    target = fq(table)
+    if not spark.catalog.tableExists(target):
+        (df.limit(0).writeTo(target).using("iceberg").partitionedBy(*partition_by)
+           .tableProperty("format-version", "2")
+           .tableProperty("write.metadata.delete-after-commit.enabled", "true")
+           .tableProperty("write.metadata.previous-versions-max", "50")
+           .create())
+    return target
+
+
+def last_stream_batch(spark: SparkSession, target: str, query_id: str) -> int | None:
+    """Dernier micro-lot committé par cette requête (propriétés de snapshot Iceberg)."""
+    row = spark.sql(f"""SELECT max(CAST(summary['{STREAM_BATCH_PROP}'] AS BIGINT)) FROM {target}.snapshots
+                        WHERE summary['{STREAM_QUERY_PROP}'] = '{query_id}'""").first()
+    return row[0] if row else None
+
+
+def append_once(spark: SparkSession, df: DataFrame, table: str, partition_by: list,
+                query_id: str, batch_id: int) -> bool:
+    """Append idempotent d'un micro-lot (équivalent du txnVersion de Delta Lake).
+
+    L'identifiant de la requête et le numéro de micro-lot sont gravés dans le snapshot Iceberg ;
+    un micro-lot rejoué après incident (même requête, même numéro) est ignoré. Contrairement à un MERGE,
+    le coût ne dépend pas de la taille de la table cible (pas de relecture des données existantes)."""
+    target = ensure_stream_table(spark, df, table, partition_by)
+    last = last_stream_batch(spark, target, query_id)
+    if last is not None and last >= batch_id:
+        return False
+    (df.writeTo(target)
+       .option(f"snapshot-property.{STREAM_QUERY_PROP}", query_id)
+       .option(f"snapshot-property.{STREAM_BATCH_PROP}", str(batch_id))
+       .append())
+    return True

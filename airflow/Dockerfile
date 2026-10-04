@@ -11,7 +11,7 @@ USER root
 COPY --from=spark /opt/spark /opt/spark
 COPY --from=spark /opt/java/openjdk /opt/java/openjdk
 COPY spark/jars/*.jar /opt/spark/jars/
-COPY spark/conf/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
+COPY spark/conf/spark-defaults.conf spark/conf/log4j2.properties /opt/spark/conf/
 RUN chmod -R a+rX /opt/spark /opt/java/openjdk \
     && apt-get update && apt-get install -y --no-install-recommends procps \
     && rm -rf /var/lib/apt/lists/*          # `ps` requis par les scripts spark-submit
