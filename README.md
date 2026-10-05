@@ -223,7 +223,7 @@ Choix : **Airflow 3.3** (branche 2.x en fin de vie), image construite en copiant
 depuis l'image Spark (versions identiques driver/executors), Connections injectées par variables
 d'environnement (`AIRFLOW_CONN_*`), enchaînement des DAGs par **assets** (data-aware scheduling).
 
-## Level 3 — Speed layer (en cours)
+## Level 3 — Speed layer (Lambda)
 
 | Service | URL | Rôle |
 |---|---|---|
@@ -263,4 +263,13 @@ défaut 5) : NiFi lit toujours un fichier avant son archivage, sans couplage ent
 
 ```bash
 ./scripts/kafka-check.sh                 # messages par topic + exemple
+```
+
+**Requête Lambda (Trino).** Le catalogue `kafka` (`trino/catalog/kafka.properties` + schémas JSON
+`trino/kafka/*.json`) expose les topics `silver-*` et `gold-*` en SQL. `sql/level3_lambda.sql` contient la
+requête de l'énoncé et une vue Lambda sans double comptage : la couche batch fait foi pour les jours
+qu'elle a calculés, la couche temps réel complète les jours suivants.
+
+```bash
+cat sql/level3_lambda.sql | docker compose exec -T trino trino --catalog lakehouse --output-format ALIGNED
 ```

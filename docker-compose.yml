@@ -134,11 +134,13 @@ services:
     deploy:
       resources:
         limits: { memory: 3g }            # la JVM Trino dimensionne son heap sur cette limite
-    depends_on: [iceberg-rest]
+    depends_on: [iceberg-rest, kafka]
     environment:
       <<: *s3-env
     ports: ["8088:8080"]
-    volumes: [./trino/catalog:/etc/trino/catalog:ro]
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino/kafka:/etc/trino/kafka:ro       # schémas JSON des topics (catalogue kafka, Level 3)
     restart: unless-stopped
 
   # ------------------------------------------------------------------ Data generation

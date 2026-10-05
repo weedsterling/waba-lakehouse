@@ -1,0 +1,84 @@
+{
+  "tableName": "gold-fraud-alerts",
+  "schemaName": "default",
+  "topicName": "gold-fraud-alerts",
+  "message": {
+    "dataFormat": "json",
+    "fields": [
+      {
+        "name": "alert_id",
+        "mapping": "alert_id",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "rule_code",
+        "mapping": "rule_code",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "severity",
+        "mapping": "severity",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "country_code",
+        "mapping": "country_code",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "entity_type",
+        "mapping": "entity_type",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "subject_type",
+        "mapping": "subject_type",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "subject_id",
+        "mapping": "subject_id",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "event_time",
+        "mapping": "event_time",
+        "type": "TIMESTAMP",
+        "dataFormat": "iso8601"
+      },
+      {
+        "name": "window_start",
+        "mapping": "window_start",
+        "type": "TIMESTAMP",
+        "dataFormat": "iso8601"
+      },
+      {
+        "name": "window_end",
+        "mapping": "window_end",
+        "type": "TIMESTAMP",
+        "dataFormat": "iso8601"
+      },
+      {
+        "name": "amount_eur",
+        "mapping": "amount_eur",
+        "type": "DOUBLE"
+      },
+      {
+        "name": "txn_count",
+        "mapping": "txn_count",
+        "type": "INTEGER"
+      },
+      {
+        "name": "details",
+        "mapping": "details",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "detected_at",
+        "mapping": "detected_at",
+        "type": "TIMESTAMP",
+        "dataFormat": "iso8601"
+      }
+    ]
+  }
+}

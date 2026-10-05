@@ -59,3 +59,21 @@ def test_batch_skips_recent_files_for_nifi():
         ["bank_transactions/CI/new.csv", "bank_transactions/CI/old.csv"]
     assert [o.key for o in store.list_csv("raw-landing", "bank_transactions/", timedelta(minutes=5))] == \
         ["bank_transactions/CI/old.csv"]
+
+
+def test_trino_kafka_descriptions_match_catalog_and_lambda_query():
+    """Chaque table du catalogue kafka a sa description JSON, et la requête Lambda de l'énoncé
+    trouve ses colonnes (country_code, event_time, streaming_amount_eur)."""
+    import json
+
+    lines = (ROOT / "trino" / "catalog" / "kafka.properties").read_text().splitlines()
+    props = dict(line.split("=", 1) for line in lines if line and not line.startswith("#"))
+    tables = props["kafka.table-names"].split(",")
+    for t in tables:
+        desc = json.loads((ROOT / "trino" / "kafka" / f"{t}.json").read_text())
+        assert desc["tableName"] == desc["topicName"] == t
+    topics = (ROOT / "scripts" / "kafka-init.sh").read_text()
+    assert all(t in topics for t in tables)
+    cols = {f["name"] for f in json.loads((ROOT / "trino" / "kafka" / "silver-bank-transactions.json").read_text())
+            ["message"]["fields"]}
+    assert {"country_code", "event_time", "streaming_amount_eur"} <= cols
