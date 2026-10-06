@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: generator-cache
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources: { requests: { storage: 2Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: generator
+  labels: { app.kubernetes.io/name: generator, app.kubernetes.io/part-of: waba }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: generator }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: generator, app.kubernetes.io/part-of: waba }
+    spec:
+      securityContext: { fsGroup: 1000 }
+      containers:
+        - name: generator
+          image: {{ .Values.image }}
+          imagePullPolicy: Never
+          env:
+            - { name: MINIO_ENDPOINT, value: "{{ .Values.minioEndpoint }}" }
+            - { name: RAW_BUCKET, value: raw-landing }
+            - { name: GENERATOR_CACHE_DIR, value: /data/referentials }
+            - { name: AWS_REGION, value: "{{ .Values.region }}" }
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: waba-s3, key: LAKEHOUSE_ACCESS_KEY } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: waba-s3, key: LAKEHOUSE_SECRET_KEY } }
+          ports:
+            - { name: http, containerPort: 8501 }
+          readinessProbe:
+            httpGet: { path: /_stcore/health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /_stcore/health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { memory: 2Gi }        # référentiels 800 000 comptes en mémoire (pandas)
+          volumeMounts:
+            - { name: cache, mountPath: /data }
+      volumes:
+        - name: cache
+          persistentVolumeClaim: { claimName: generator-cache }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: generator
+spec:
+  selector: { app.kubernetes.io/name: generator }
+  ports:
+    - { name: http, port: 8501, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: generator
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: generator
+                port: { name: http }

@@ -1,0 +1,30 @@
+# Flow-as-code : construit le flux MinIO -> Kafka (nifi/provision_flow.py, même script qu'en Compose)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nifi-provision
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: provision
+          image: {{ .Values.provisionImage }}
+          command: ["python", "-u", "/scripts/provision_flow.py"]
+          env:
+            - { name: NIFI_API, value: "https://nifi-0.nifi.{{ .Release.Namespace }}.svc.cluster.local:8443/nifi-api" }
+            - { name: MINIO_ENDPOINT, value: "{{ .Values.minioEndpoint }}" }
+            - { name: KAFKA_BOOTSTRAP, value: "{{ .Values.kafkaBootstrap }}" }
+            - { name: AWS_REGION, value: "{{ .Values.region }}" }
+          envFrom:
+            - secretRef: { name: waba-nifi }
+            - secretRef: { name: waba-s3 }
+          volumeMounts:
+            - { name: script, mountPath: /scripts }
+      volumes:
+        - name: script
+          configMap: { name: nifi-provision-script }

@@ -24,13 +24,21 @@ S3=("LAKEHOUSE_ACCESS_KEY=$LAKEHOUSE_ACCESS_KEY" "LAKEHOUSE_SECRET_KEY=$LAKEHOUS
 secret ingestion waba-minio-root "MINIO_ROOT_USER=$MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD"
 for ns in ingestion processing serving; do secret "$ns" waba-s3 "${S3[@]}"; done
 secret processing waba-pii "PII_HASH_SALT=$PII_HASH_SALT"
+secret ingestion waba-nifi "NIFI_ADMIN_USER=${NIFI_ADMIN_USER:-admin}" "NIFI_ADMIN_PASSWORD=$NIFI_ADMIN_PASSWORD" \
+  "NIFI_SENSITIVE_PROPS_KEY=$NIFI_SENSITIVE_PROPS_KEY"
 
-kubectl -n ingestion create configmap minio-init-script --from-file=minio-init.sh=scripts/minio-init.sh \
-  --dry-run=client -o yaml | apply
+# Scripts et schémas versionnés dans le dépôt -> ConfigMaps (une seule source pour Compose et Kubernetes)
+configmap() {  # namespace nom --from-file...
+  local ns=$1 name=$2; shift 2
+  kubectl -n "$ns" create configmap "$name" "$@" --dry-run=client -o yaml | apply
+}
+configmap ingestion minio-init-script --from-file=minio-init.sh=scripts/minio-init.sh
+configmap ingestion nifi-provision-script --from-file=provision_flow.py=nifi/provision_flow.py
+configmap serving trino-kafka-tables --from-file=trino/kafka/
 
 # Noms d'hôtes des interfaces (Ingress) -> IP du cluster, dans /etc/hosts de la VM
 ip=$(minikube ip)
-hosts="minio.waba.local nifi.waba.local airflow.waba.local superset.waba.local keycloak.waba.local openmetadata.waba.local grafana.waba.local"
+hosts="minio.waba.local generator.waba.local nifi.waba.local airflow.waba.local superset.waba.local keycloak.waba.local openmetadata.waba.local grafana.waba.local"
 if ! grep -q "^$ip $hosts\$" /etc/hosts; then
   sudo sed -i '/waba\.local/d' /etc/hosts
   echo "$ip $hosts" | sudo tee -a /etc/hosts >/dev/null

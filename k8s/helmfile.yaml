@@ -6,6 +6,10 @@
 #   governance (Keycloak, OpenMetadata) · monitoring (Prometheus, Grafana, Loki)
 # Aucun secret dans ce dépôt : les Secrets Kubernetes sont créés depuis .env par bootstrap.sh.
 # =============================================================================
+repositories:
+  - name: strimzi
+    url: https://strimzi.io/charts/
+
 helmDefaults:
   wait: true
   waitForJobs: true
@@ -22,3 +26,36 @@ releases:
     namespace: processing
     chart: ./charts/iceberg-rest
     needs: [ingestion/minio]
+
+  # ------------------------------------------------------------ 9.2 : ingestion temps réel + serving
+  - name: strimzi
+    namespace: ingestion
+    chart: strimzi/strimzi-kafka-operator
+    version: 0.45.0                   # opérateur Kafka (CRD Kafka, KafkaNodePool, KafkaTopic)
+    values:
+      # Marge mémoire/CPU et sondes tolérantes au démarrage de la JVM sur Minikube.
+      # NB : Strimzi 0.45 exige Kubernetes <= 1.32 (cf. scripts/k8s/cluster-up.sh, K8S_VERSION).
+      - resources: { requests: { cpu: 500m, memory: 512Mi }, limits: { memory: 1Gi } }
+        livenessProbe: { initialDelaySeconds: 90, periodSeconds: 30 }
+        readinessProbe: { initialDelaySeconds: 60, periodSeconds: 30 }
+
+  - name: kafka
+    namespace: ingestion
+    chart: ./charts/kafka
+    needs: [ingestion/strimzi]
+
+  - name: nifi
+    namespace: ingestion
+    chart: ./charts/nifi
+    needs: [ingestion/minio, ingestion/kafka]
+    timeout: 1800                     # premier démarrage de NiFi + Job de provisionnement du flux
+
+  - name: generator
+    namespace: ingestion
+    chart: ./charts/generator
+    needs: [ingestion/minio]
+
+  - name: trino
+    namespace: serving
+    chart: ./charts/trino
+    needs: [processing/iceberg-rest, ingestion/kafka]

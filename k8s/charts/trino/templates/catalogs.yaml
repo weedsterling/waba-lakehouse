@@ -1,0 +1,26 @@
+# Mêmes catalogues que la stack Compose, adresses de service Kubernetes ; secrets lus dans l'environnement.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-catalogs
+data:
+  lakehouse.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri={{ .Values.icebergRestUri }}
+    iceberg.rest-catalog.warehouse=s3://lakehouse/
+    iceberg.file-format=PARQUET
+    fs.native-s3.enabled=true
+    s3.endpoint={{ .Values.minioEndpoint }}
+    s3.region={{ .Values.region }}
+    s3.path-style-access=true
+    s3.aws-access-key=${ENV:LAKEHOUSE_ACCESS_KEY}
+    s3.aws-secret-key=${ENV:LAKEHOUSE_SECRET_KEY}
+  kafka.properties: |
+    connector.name=kafka
+    kafka.nodes={{ .Values.kafkaNodes }}
+    kafka.default-schema=default
+    kafka.table-names=silver-bank-transactions,silver-mobile-money,gold-fraud-alerts,gold-aml-events
+    kafka.table-description-supplier=FILE
+    kafka.table-description-dir=/etc/trino/kafka
+    kafka.hide-internal-columns=true

@@ -1,0 +1,18 @@
+cluster: waba
+version: 3.9.0
+metadataVersion: 3.9-IV0
+storage: 10Gi
+partitions: 8
+# Rétention : raw/silver 7 jours (rejouables par Spark), gold et DLQ 30 jours (audit)
+topics:
+  - { name: raw-bank-transactions, retentionMs: "604800000" }
+  - { name: raw-insurance-operations, retentionMs: "604800000" }
+  - { name: raw-mobile-money-payments, retentionMs: "604800000" }
+  - { name: raw-loan-repayments, retentionMs: "604800000" }
+  - { name: silver-bank-transactions, retentionMs: "604800000" }
+  - { name: silver-insurance-operations, retentionMs: "604800000" }
+  - { name: silver-mobile-money, retentionMs: "604800000" }
+  - { name: gold-fraud-alerts, retentionMs: "2592000000" }
+  - { name: gold-aml-events, retentionMs: "2592000000" }
+  - { name: gold-liquidity-alerts, retentionMs: "2592000000" }
+  - { name: dlq-financial-events, retentionMs: "2592000000" }

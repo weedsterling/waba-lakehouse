@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+  labels: { app.kubernetes.io/name: nifi, app.kubernetes.io/part-of: waba }
+spec:
+  serviceName: nifi
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: nifi }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: nifi, app.kubernetes.io/part-of: waba }
+    spec:
+      securityContext: { fsGroup: 1000 }
+      initContainers:
+        # Le volume de configuration est vide au premier démarrage : on y copie la conf de l'image.
+        # Ensuite, il conserve le flux (flow.json.gz) et les clés générées par NiFi.
+        - name: seed-conf
+          image: {{ .Values.image }}
+          command: ["sh", "-c", "[ -f /pvc/nifi.properties ] || cp -a /opt/nifi/nifi-current/conf/. /pvc/"]
+          volumeMounts:
+            - { name: conf, mountPath: /pvc }
+      containers:
+        - name: nifi
+          image: {{ .Values.image }}
+          env:
+            - { name: NIFI_WEB_HTTPS_HOST, value: "nifi-0.nifi.{{ .Release.Namespace }}.svc.cluster.local" }
+            - { name: NIFI_WEB_PROXY_HOST, value: "{{ .Values.host }},{{ .Values.host }}:443" }
+            - { name: NIFI_JVM_HEAP_INIT, value: 768m }
+            - { name: NIFI_JVM_HEAP_MAX, value: 1g }
+            - name: SINGLE_USER_CREDENTIALS_USERNAME
+              valueFrom: { secretKeyRef: { name: waba-nifi, key: NIFI_ADMIN_USER } }
+            - name: SINGLE_USER_CREDENTIALS_PASSWORD
+              valueFrom: { secretKeyRef: { name: waba-nifi, key: NIFI_ADMIN_PASSWORD } }
+            - name: NIFI_SENSITIVE_PROPS_KEY
+              valueFrom: { secretKeyRef: { name: waba-nifi, key: NIFI_SENSITIVE_PROPS_KEY } }
+          ports:
+            - { name: https, containerPort: 8443 }
+          startupProbe:                     # NiFi met 1 à 3 minutes à démarrer
+            tcpSocket: { port: https }
+            periodSeconds: 10
+            failureThreshold: 36
+          readinessProbe:
+            tcpSocket: { port: https }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: https }
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests: { cpu: {{ .Values.resources.requests.cpu }}, memory: {{ .Values.resources.requests.memory }} }
+            limits: { memory: {{ .Values.resources.limits.memory }} }
+          volumeMounts:
+            - { name: conf, mountPath: /opt/nifi/nifi-current/conf }
+            - { name: data, mountPath: /opt/nifi/nifi-current/state, subPath: state }
+            - { name: data, mountPath: /opt/nifi/nifi-current/database_repository, subPath: database }
+            - { name: data, mountPath: /opt/nifi/nifi-current/flowfile_repository, subPath: flowfile }
+            - { name: data, mountPath: /opt/nifi/nifi-current/content_repository, subPath: content }
+            - { name: data, mountPath: /opt/nifi/nifi-current/provenance_repository, subPath: provenance }
+  volumeClaimTemplates:
+    - metadata: { name: conf }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 256Mi } }
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: {{ .Values.storage }} } }

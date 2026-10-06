@@ -1,0 +1,8 @@
+image: trinodb/trino:467
+icebergRestUri: http://iceberg-rest.processing.svc.cluster.local:8181
+minioEndpoint: http://minio.ingestion.svc.cluster.local:9000
+kafkaNodes: waba-kafka-bootstrap.ingestion.svc.cluster.local:9092
+region: us-east-1
+resources:
+  requests: { cpu: 500m, memory: 2Gi }
+  limits: { memory: 3Gi }            # la JVM dimensionne son tas sur cette limite (MaxRAMPercentage)

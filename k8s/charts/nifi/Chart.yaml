@@ -1,0 +1,6 @@
+apiVersion: v2
+name: nifi
+description: "WABA — Apache NiFi (MinIO raw-landing -> Kafka raw-*), flux provisionné par l'API REST"
+type: application
+version: 0.1.0
+appVersion: "1.28.1"

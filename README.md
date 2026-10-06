@@ -284,9 +284,9 @@ docker compose stop                # libère la mémoire : la stack Compose rest
 
 | Namespace | Composants |
 |---|---|
-| `ingestion` | MinIO (StatefulSet + PVC, Job d'initialisation), NiFi, Kafka |
+| `ingestion` | MinIO (StatefulSet + PVC, Job d'initialisation), Kafka KRaft (opérateur Strimzi, topics `KafkaTopic`), NiFi (StatefulSet, flux provisionné par Job), générateur |
 | `processing` | Catalogue Iceberg REST (PVC SQLite), Spark Operator, Airflow |
-| `serving` | Trino, Superset |
+| `serving` | Trino (catalogues Iceberg + Kafka), Superset |
 | `governance` | Keycloak, OpenMetadata |
 | `monitoring` | Prometheus, Grafana, Loki |
 

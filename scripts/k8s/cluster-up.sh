@@ -5,7 +5,10 @@
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-K8S_VERSION=v1.33.1
+# Version de Kubernetes ÉPINGLÉE sur la matrice de compatibilité des opérateurs : Kubernetes 1.33 ajoute
+# des champs à /version (emulationMajor…) que le client fabric8 de Strimzi 0.45 refuse
+# (« UnrecognizedPropertyException », l'opérateur redémarre en boucle). 1.32 est supportée par tous.
+K8S_VERSION=v1.32.5
 
 # Prérequis réseau : DNS fiable pour les conteneurs. Si la configuration Docker change, le nœud
 # Minikube (créé avec l'ancienne) est recréé — sans perte, le cluster ne contient encore rien d'utile.
@@ -14,6 +17,15 @@ if [[ $rc -eq 10 ]]; then
   minikube delete >/dev/null 2>&1 || true
 elif [[ $rc -ne 0 ]]; then
   exit $rc
+fi
+
+# Cluster existant dans une autre version : Minikube refuse de rétrograder -> recréation
+if minikube status >/dev/null 2>&1; then
+  current=$(kubectl version -o json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["serverVersion"]["gitVersion"])' || true)
+  if [[ -n "$current" && "$current" != "$K8S_VERSION" ]]; then
+    echo "Cluster en $current, version attendue $K8S_VERSION : recréation du cluster"
+    minikube delete
+  fi
 fi
 
 if ! minikube status >/dev/null 2>&1; then
@@ -52,7 +64,7 @@ for img in "${IMAGES[@]}"; do
   if docker image inspect "$img" >/dev/null 2>&1; then
     minikube image ls | grep -q "${img%%:*}:${img##*:}" || { echo "chargement de $img"; minikube image load "$img"; }
   else
-    echo "⚠ image $img absente : lancer d'abord 'docker compose build'" >&2
+    echo "ℹ image $img absente de la VM : elle sera téléchargée par le cluster"
   fi
 done
 kubectl get nodes -o wide

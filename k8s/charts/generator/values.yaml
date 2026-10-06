@@ -1,0 +1,4 @@
+image: waba/generator:1.0          # image locale chargée dans Minikube (minikube image load)
+host: generator.waba.local
+minioEndpoint: http://minio.ingestion.svc.cluster.local:9000
+region: us-east-1

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: trino
+description: "WABA — Trino mono-nœud (coordinateur + worker) : catalogues Iceberg (batch) et Kafka (temps réel)"
+type: application
+version: 0.1.0
+appVersion: "467"

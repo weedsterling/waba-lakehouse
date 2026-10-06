@@ -5,7 +5,7 @@
 # Idempotent : un outil déjà présent dans la bonne version n'est pas retéléchargé.
 # =============================================================================
 set -euo pipefail
-KUBECTL=v1.33.1
+KUBECTL=v1.32.5   # aligné sur la version du cluster (écart client/serveur ≤ 1 version mineure)
 MINIKUBE=v1.36.0
 HELM=v3.18.4
 HELMFILE=1.1.3

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino
+  labels: { app.kubernetes.io/name: trino, app.kubernetes.io/part-of: waba }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: trino }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: trino, app.kubernetes.io/part-of: waba }
+    spec:
+      containers:
+        - name: trino
+          image: {{ .Values.image }}
+          envFrom:
+            - secretRef: { name: waba-s3 }
+          ports:
+            - { name: http, containerPort: 8080 }
+          # Coordinateur prêt = il répond ET a fini de démarrer (« starting »: false)
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "curl -fs http://localhost:8080/v1/info | grep -q '\"starting\":false'"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /v1/info, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests: { cpu: {{ .Values.resources.requests.cpu }}, memory: {{ .Values.resources.requests.memory }} }
+            limits: { memory: {{ .Values.resources.limits.memory }} }
+          volumeMounts:
+            - { name: catalogs, mountPath: /etc/trino/catalog }
+            - { name: kafka-tables, mountPath: /etc/trino/kafka }
+      volumes:
+        - name: catalogs
+          configMap: { name: trino-catalogs }
+        - name: kafka-tables
+          configMap: { name: trino-kafka-tables }   # créée par bootstrap.sh depuis trino/kafka/*.json

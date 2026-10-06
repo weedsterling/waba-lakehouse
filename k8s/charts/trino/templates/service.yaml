@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: trino
+spec:
+  selector: { app.kubernetes.io/name: trino }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
