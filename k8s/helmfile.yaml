@@ -1,0 +1,24 @@
+# =============================================================================
+# WABA Group — Level 4 : déploiement Kubernetes de toute la plateforme en UNE commande
+#   ./scripts/k8s/deploy.sh      (cluster + images + secrets + helmfile sync)
+# Un release Helm par composant, chacun dans le namespace de son domaine :
+#   ingestion (MinIO, NiFi, Kafka) · processing (Iceberg, Spark, Airflow) · serving (Trino, Superset)
+#   governance (Keycloak, OpenMetadata) · monitoring (Prometheus, Grafana, Loki)
+# Aucun secret dans ce dépôt : les Secrets Kubernetes sont créés depuis .env par bootstrap.sh.
+# =============================================================================
+helmDefaults:
+  wait: true
+  waitForJobs: true
+  timeout: 900
+  createNamespace: false        # namespaces créés (et étiquetés) par bootstrap.sh
+
+releases:
+  # ------------------------------------------------------------ 9.1 : socle stockage + catalogue
+  - name: minio
+    namespace: ingestion
+    chart: ./charts/minio
+
+  - name: iceberg-rest
+    namespace: processing
+    chart: ./charts/iceberg-rest
+    needs: [ingestion/minio]

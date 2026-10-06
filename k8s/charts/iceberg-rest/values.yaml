@@ -1,0 +1,8 @@
+image: tabulario/iceberg-rest:1.6.0
+s3Endpoint: http://minio.ingestion.svc.cluster.local:9000
+warehouse: s3://lakehouse/
+region: us-east-1
+storage: 1Gi
+resources:
+  requests: { cpu: 100m, memory: 384Mi }
+  limits: { memory: 768Mi }

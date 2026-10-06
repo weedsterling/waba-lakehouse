@@ -1,0 +1,6 @@
+apiVersion: v2
+name: iceberg-rest
+description: WABA — catalogue Apache Iceberg REST (métadonnées des tables, persistées en SQLite sur volume)
+type: application
+version: 0.1.0
+appVersion: "1.6.0"

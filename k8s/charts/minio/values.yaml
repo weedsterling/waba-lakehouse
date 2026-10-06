@@ -1,0 +1,7 @@
+image: ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
+mcImage: bitnamilegacy/minio-client:2025.7.21-debian-12-r3
+storage: 20Gi
+consoleHost: minio.waba.local
+resources:
+  requests: { cpu: 250m, memory: 512Mi }
+  limits: { memory: 1Gi }

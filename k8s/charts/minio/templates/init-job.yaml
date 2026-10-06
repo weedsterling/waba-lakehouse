@@ -1,0 +1,30 @@
+# Initialisation idempotente (buckets, compte de service moindre privilège, versioning de l'archive).
+# Même script que Docker Compose (scripts/minio-init.sh), monté depuis la ConfigMap minio-init-script.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsUser: 0 }
+      containers:
+        - name: mc
+          image: {{ .Values.mcImage }}
+          command: ["/bin/sh", "/scripts/minio-init.sh"]
+          env:
+            - { name: MINIO_URL, value: "http://minio:9000" }
+            - { name: HOME, value: /tmp }
+          envFrom:
+            - secretRef: { name: waba-minio-root }
+            - secretRef: { name: waba-s3 }
+          volumeMounts:
+            - { name: script, mountPath: /scripts }
+      volumes:
+        - name: script
+          configMap: { name: minio-init-script }

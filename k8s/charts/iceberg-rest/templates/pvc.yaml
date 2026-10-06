@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: iceberg-catalog
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests: { storage: {{ .Values.storage }} }

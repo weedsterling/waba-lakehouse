@@ -4,7 +4,7 @@ set -eu
 
 # Attente active de MinIO (robuste même sans healthcheck)
 i=0
-until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+until mc alias set local "${MINIO_URL:-http://minio:9000}" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
   i=$((i+1)); [ "$i" -ge 30 ] && { echo "MinIO injoignable" >&2; exit 1; }
   echo "attente de MinIO ($i/30)…"; sleep 2
 done

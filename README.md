@@ -273,3 +273,22 @@ qu'elle a calculés, la couche temps réel complète les jours suivants.
 ```bash
 cat sql/level3_lambda.sql | docker compose exec -T trino trino --catalog lakehouse --output-format ALIGNED
 ```
+
+## Level 4 — Kubernetes (en cours)
+
+```bash
+./scripts/k8s/install-tools.sh     # kubectl, minikube, helm, helmfile (versions épinglées + SHA-256)
+docker compose stop                # libère la mémoire : la stack Compose reste la démo des Levels 1-3
+./scripts/k8s/deploy.sh            # cluster + secrets depuis .env + helmfile sync + état
+```
+
+| Namespace | Composants |
+|---|---|
+| `ingestion` | MinIO (StatefulSet + PVC, Job d'initialisation), NiFi, Kafka |
+| `processing` | Catalogue Iceberg REST (PVC SQLite), Spark Operator, Airflow |
+| `serving` | Trino, Superset |
+| `governance` | Keycloak, OpenMetadata |
+| `monitoring` | Prometheus, Grafana, Loki |
+
+Secrets Kubernetes créés par `scripts/k8s/bootstrap.sh` depuis `.env` (rien dans les manifestes),
+sondes liveness/readiness sur chaque composant, interfaces exposées par Ingress (`*.waba.local`).
