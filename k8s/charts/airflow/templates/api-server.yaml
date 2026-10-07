@@ -1,0 +1,84 @@
+# API REST + interface web (Airflow 3). Pas d'accès aux DAGs (lus sérialisés en base),
+# ni à l'API Kubernetes. Journaux des tâches lus sur le serveur de logs du scheduler (port 8793).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-api-server
+  labels: { app.kubernetes.io/name: airflow-api-server, app.kubernetes.io/part-of: waba }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: airflow-api-server }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: airflow-api-server, app.kubernetes.io/part-of: waba }
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        # SimpleAuthManager ouvre le fichier des mots de passe en écriture (« a+ ») : un volume Secret,
+        # toujours en lecture seule, le fait planter -> copie dans un emptyDir appartenant à airflow (600).
+        - name: auth-file
+          image: {{ .Values.initImage }}
+          command: ["sh", "-c", "cp /secret/passwords.json /auth/passwords.json && chown 50000:0 /auth/passwords.json && chmod 600 /auth/passwords.json"]
+          volumeMounts:
+            - { name: auth-secret, mountPath: /secret, readOnly: true }
+            - { name: auth, mountPath: /auth }
+        {{- include "airflow.waitForMigrations" . | nindent 8 }}
+      containers:
+        - name: api-server
+          image: {{ .Values.image }}
+          imagePullPolicy: Never
+          args: ["api-server"]
+          env:
+            {{- include "airflow.env" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /api/v2/version, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: { path: /api/v2/version, port: http }
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.resources.apiServer | nindent 12 }}
+          volumeMounts:
+            - { name: auth, mountPath: /opt/airflow/auth }
+      volumes:
+        - name: auth
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }   # en mémoire : jamais écrit sur disque
+        - name: auth-secret               # mot de passe de l'UI (secret waba-airflow, depuis .env)
+          secret:
+            secretName: waba-airflow
+            items: [{ key: passwords.json, path: passwords.json }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-api-server
+spec:
+  selector: { app.kubernetes.io/name: airflow-api-server }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: airflow
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: airflow-api-server
+                port: { name: http }

@@ -1,0 +1,40 @@
+# Triggerer : exécute les tâches « différées » (deferrable operators, capteurs asynchrones) sans occuper
+# d'emplacement d'exécution. Aucun DAG WABA n'en dépend aujourd'hui ; il complète l'état de santé
+# Airflow et permet de passer les capteurs S3 en mode différé sans changer l'infrastructure.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-triggerer
+  labels: { app.kubernetes.io/name: airflow-triggerer, app.kubernetes.io/part-of: waba }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: airflow-triggerer }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: airflow-triggerer, app.kubernetes.io/part-of: waba }
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        {{- include "airflow.waitForMigrations" . | nindent 8 }}
+      containers:
+        - name: triggerer
+          image: {{ .Values.image }}
+          imagePullPolicy: Never
+          args: ["triggerer"]
+          env:
+            {{- include "airflow.env" . | nindent 12 }}
+          livenessProbe:
+            exec: { command: ["airflow", "jobs", "check", "--job-type", "TriggererJob", "--local"] }
+            initialDelaySeconds: 180
+            periodSeconds: 60
+            timeoutSeconds: 45
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.resources.triggerer | nindent 12 }}
+          volumeMounts:
+            - { name: logs, mountPath: /opt/airflow/logs }
+      volumes:
+        - name: logs
+          emptyDir: {}

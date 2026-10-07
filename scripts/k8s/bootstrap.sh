@@ -27,6 +27,12 @@ secret processing waba-pii "PII_HASH_SALT=$PII_HASH_SALT"
 [[ -n "${ICEBERG_DB_PASSWORD:-}" && "$ICEBERG_DB_PASSWORD" != change-me* ]] \
   || { echo "ICEBERG_DB_PASSWORD manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
 secret processing waba-catalog-db "ICEBERG_DB_PASSWORD=$ICEBERG_DB_PASSWORD"
+for v in AIRFLOW_ADMIN_PASSWORD AIRFLOW_DB_PASSWORD AIRFLOW_FERNET_KEY AIRFLOW_JWT_SECRET AIRFLOW_API_SECRET_KEY; do
+  [[ -n "${!v:-}" && "${!v}" != change-me* ]] || { echo "$v manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
+done
+secret processing waba-airflow "AIRFLOW_DB_PASSWORD=$AIRFLOW_DB_PASSWORD" "AIRFLOW_FERNET_KEY=$AIRFLOW_FERNET_KEY" \
+  "AIRFLOW_JWT_SECRET=$AIRFLOW_JWT_SECRET" "AIRFLOW_API_SECRET_KEY=$AIRFLOW_API_SECRET_KEY" \
+  "passwords.json={\"admin\": \"$AIRFLOW_ADMIN_PASSWORD\"}"          # UI Airflow (SimpleAuthManager)
 secret ingestion waba-nifi "NIFI_ADMIN_USER=${NIFI_ADMIN_USER:-admin}" "NIFI_ADMIN_PASSWORD=$NIFI_ADMIN_PASSWORD" \
   "NIFI_SENSITIVE_PROPS_KEY=$NIFI_SENSITIVE_PROPS_KEY"
 
@@ -41,6 +47,9 @@ configmap serving trino-kafka-tables --from-file=trino/kafka/
 # Code Spark monté dans les pods (même code que Compose, mis à jour sans reconstruire l'image)
 configmap processing waba-spark-jobs --from-file=spark/jobs/
 configmap processing waba-spark-lib --from-file=spark/waba_spark/
+# DAGs Airflow (+ paquet waba/) : le scheduler et le dag-processor redémarrent si leur contenu change
+configmap processing waba-airflow-dags --from-file=airflow/dags/
+configmap processing waba-airflow-lib --from-file=airflow/dags/waba/
 
 # Noms d'hôtes des interfaces (Ingress) -> IP du cluster, dans /etc/hosts de la VM
 ip=$(minikube ip)

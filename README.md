@@ -285,10 +285,17 @@ docker compose stop                # libère la mémoire : la stack Compose rest
 | Namespace | Composants |
 |---|---|
 | `ingestion` | MinIO (StatefulSet + PVC, Job d'initialisation), Kafka KRaft (opérateur Strimzi, topics `KafkaTopic`), NiFi (StatefulSet, flux provisionné par Job), générateur |
-| `processing` | Catalogue Iceberg REST adossé à PostgreSQL (StatefulSet + PVC), Spark Operator (kubeflow) : flux `stream-raw-silver` / `stream-silver-gold` en `SparkApplication` (`restartPolicy: Always`), jobs batch via `scripts/k8s/spark-run.sh` puis Airflow |
+| `processing` | Catalogue Iceberg REST adossé à PostgreSQL (StatefulSet + PVC), Spark Operator (kubeflow) : flux `stream-raw-silver` / `stream-silver-gold` en `SparkApplication` (`restartPolicy: Always`) ; Airflow 3 (api-server, scheduler LocalExecutor en StatefulSet, dag-processor, triggerer, PostgreSQL) : chaque tâche Spark des DAGs devient une `SparkApplication` (`waba/spark_k8s.py`, modèle unique rendu par le chart `spark-jobs`) |
 | `serving` | Trino (catalogues Iceberg + Kafka), Superset |
 | `governance` | Keycloak, OpenMetadata |
 | `monitoring` | Prometheus, Grafana, Loki |
 
 Secrets Kubernetes créés par `scripts/k8s/bootstrap.sh` depuis `.env` (rien dans les manifestes),
 sondes liveness/readiness sur chaque composant, interfaces exposées par Ingress (`*.waba.local`).
+
+**Airflow sur Kubernetes** — http://airflow.waba.local (admin / `AIRFLOW_ADMIN_PASSWORD` de `.env`).
+Les DAGs sont ceux des Levels 2-3, inchangés : `WABA_SPARK_MODE=kubernetes` fait de `spark_job()` une
+`SparkApplication` (compte de service `waba-airflow`, RBAC limité au namespace `processing`).
+Après modification d'un DAG : `./scripts/k8s/bootstrap.sh && helmfile -f k8s/helmfile.yaml -l name=airflow sync`
+(ConfigMaps mises à jour, scheduler et dag-processor redémarrés automatiquement par empreinte).
+CLI : `./scripts/k8s/airflow.sh dags list`.

@@ -1,0 +1,12 @@
+# Modèle des jobs batch, lu par Airflow (waba.spark_k8s.SparkApplicationOperator) à chaque soumission :
+# Airflow ne remplace que __NAME__, __FILE__ et les arguments -> configuration Spark (catalogue, S3,
+# secrets, ressources) définie à un seul endroit, ce chart. Mis à jour par `helmfile sync`, relu sans
+# redémarrer Airflow (volume ConfigMap).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-batch-template
+  labels: { app.kubernetes.io/part-of: waba }
+data:
+  sparkapplication.yaml: |
+    {{- include "waba.sparkapp" (dict "app" (dict "name" "__NAME__" "kind" "batch" "file" "__FILE__" "restart" "Never") "root" $) | nindent 4 }}

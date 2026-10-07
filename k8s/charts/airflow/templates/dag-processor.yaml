@@ -1,0 +1,43 @@
+# Analyse des fichiers de DAGs et sérialisation en base (processus séparé du scheduler en Airflow 3).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-dag-processor
+  labels: { app.kubernetes.io/name: airflow-dag-processor, app.kubernetes.io/part-of: waba }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: airflow-dag-processor }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: airflow-dag-processor, app.kubernetes.io/part-of: waba }
+      annotations:
+        waba.io/dags-checksum: {{ include "airflow.codeChecksum" . | quote }}
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        {{- include "airflow.dagsInit" . | nindent 8 }}
+        {{- include "airflow.waitForMigrations" . | nindent 8 }}
+      containers:
+        - name: dag-processor
+          image: {{ .Values.image }}
+          imagePullPolicy: Never
+          args: ["dag-processor"]
+          env:
+            {{- include "airflow.env" . | nindent 12 }}
+          livenessProbe:
+            exec: { command: ["airflow", "jobs", "check", "--job-type", "DagProcessorJob", "--local"] }
+            initialDelaySeconds: 180
+            periodSeconds: 60
+            timeoutSeconds: 45
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.resources.dagProcessor | nindent 12 }}
+          volumeMounts:
+            {{- include "airflow.dagsMounts" . | nindent 12 }}
+            - { name: logs, mountPath: /opt/airflow/logs }
+      volumes:
+        {{- include "airflow.dagsVolumes" . | nindent 8 }}
+        - name: logs
+          emptyDir: {}

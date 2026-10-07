@@ -1,0 +1,53 @@
+# Base de métadonnées Airflow (DAG runs, états des tâches, connexions chiffrées par la clé Fernet).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: airflow-postgres
+  labels: { app.kubernetes.io/name: airflow-postgres, app.kubernetes.io/part-of: waba }
+spec:
+  serviceName: airflow-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: airflow-postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: airflow-postgres, app.kubernetes.io/part-of: waba }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: {{ .Values.db.image }}
+          env:
+            - { name: POSTGRES_DB, value: airflow }
+            - { name: POSTGRES_USER, value: airflow }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: waba-airflow, key: AIRFLOW_DB_PASSWORD } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: pg, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "airflow", "-d", "airflow"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "airflow", "-d", "airflow"] }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: { cpu: {{ .Values.db.resources.requests.cpu }}, memory: {{ .Values.db.resources.requests.memory }} }
+            limits: { memory: {{ .Values.db.resources.limits.memory }} }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: {{ .Values.db.storage }} } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-postgres
+spec:
+  selector: { app.kubernetes.io/name: airflow-postgres }
+  ports:
+    - { name: pg, port: 5432, targetPort: pg }

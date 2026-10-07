@@ -42,8 +42,19 @@ env:
     AWS_SECRET_ACCESS_KEY: { secret: waba-s3, key: LAKEHOUSE_SECRET_KEY }
     PII_HASH_SALT: { secret: waba-pii, key: PII_HASH_SALT }
 
-# Applications déployées en permanence. Les jobs batch utilisent le même modèle
-# (scripts/k8s/spark-run.sh puis Airflow remplacent cette liste par un seul job).
+# Valeurs par défaut des jobs batch (kind: batch) : DAGs Airflow et scripts/k8s/spark-run.sh.
+# Un job batch à la fois (pool Airflow « spark ») : 1 driver 1g + 1 exécuteur 3g / 2 cœurs.
+batch:
+  restart: Never
+  ttl: 3600                         # SparkApplication et pod driver conservés 1 h (diagnostic), puis supprimés
+  driverMemory: 1g
+  executorMemory: 3g
+  executorCores: 2
+  executorInstances: 1
+  conf:
+    spark.sql.shuffle.partitions: "16"
+
+# Applications déployées en permanence (flux temps réel du Level 3).
 apps:
   - name: stream-raw-silver
     kind: streaming

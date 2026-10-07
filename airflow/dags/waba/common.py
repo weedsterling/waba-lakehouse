@@ -1,23 +1,29 @@
 """Briques communes aux DAGs WABA : paramètres, politique de reprise, alertes, soumission Spark.
 
 Aucun secret ici : les identifiants viennent des Connections Airflow
-(`spark_default`, `minio_s3`) et des variables d'environnement injectées par Docker Compose.
+(`spark_default`, `minio_s3`) et des variables d'environnement injectées par Docker Compose / Kubernetes.
+
+Deux modes de soumission Spark, choisis par la variable d'environnement WABA_SPARK_MODE :
+  standalone (défaut, Docker Compose) : spark-submit vers le cluster Spark standalone ;
+  kubernetes (Level 4)                : une SparkApplication par tâche (Spark Operator), cf. spark_k8s.py.
+Les DAGs sont identiques dans les deux cas : seul `spark_job()` change d'opérateur.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import timedelta
 
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from airflow.sdk import Asset, Param
+from airflow.sdk import Asset, BaseOperator, Param
 
 log = logging.getLogger("waba.alerts")
 
 COUNTRIES = ["CI", "SN", "ML", "BF", "GN", "TG", "BJ", "GH"]
 JOBS_DIR = "/opt/waba/jobs"
-# Pool Airflow (1 emplacement, créé par airflow-init) : un seul job Spark à la fois sur le
-# cluster (6 Go / 4 cœurs). Les runs déclenchés en rafale par les assets font la queue
+SPARK_MODE = os.environ.get("WABA_SPARK_MODE", "standalone")
+# Pool Airflow (1 emplacement, créé à l'initialisation) : un seul job Spark batch à la fois sur le
+# cluster (Compose : 6 Go / 4 cœurs ; Kubernetes : nœud partagé avec les flux temps réel). Les runs déclenchés en rafale par les assets font la queue
 # au lieu de se disputer la mémoire des exécuteurs.
 SPARK_POOL = "spark"
 
@@ -67,8 +73,16 @@ SPARK_CONF = {
 }
 
 
-def spark_job(task_id: str, script: str, args: list[str], **kwargs) -> SparkSubmitOperator:
-    """Soumet un job PySpark du dépôt (spark/jobs/<script>) au cluster Spark."""
+def spark_job(task_id: str, script: str, args: list[str], **kwargs) -> BaseOperator:
+    """Soumet un job PySpark du dépôt (spark/jobs/<script>) au cluster Spark du mode courant."""
+    if SPARK_MODE == "kubernetes":
+        from waba.spark_k8s import SparkApplicationOperator
+
+        return SparkApplicationOperator(task_id=task_id, script=script, arguments=args, pool=SPARK_POOL, **kwargs)
+    if SPARK_MODE != "standalone":
+        raise ValueError(f"WABA_SPARK_MODE inconnu : {SPARK_MODE!r} (standalone | kubernetes)")
+    from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+
     return SparkSubmitOperator(
         task_id=task_id,
         conn_id="spark_default",

@@ -23,3 +23,11 @@ def test_helmfile_releases_reference_existing_charts():
         if r["chart"].startswith("./"):
             assert (ROOT / r["chart"]).is_dir(), r["chart"]
         assert set(r.get("needs", [])) <= names, r["name"]
+
+
+def test_airflow_passwords_file_is_writable():
+    """Régression : SimpleAuthManager ouvre passwords.json en « a+ » ; un volume Secret (lecture seule)
+    monté directement fait planter l'api-server (PermissionError) -> copie dans un emptyDir."""
+    tpl = (ROOT / "charts/airflow/templates/api-server.yaml").read_text()
+    assert "{ name: auth, mountPath: /opt/airflow/auth }" in tpl
+    assert "emptyDir: { medium: Memory" in tpl and "chown 50000:0 /auth/passwords.json" in tpl

@@ -1,0 +1,30 @@
+# Moindre privilège : seul le scheduler (qui exécute les tâches, LocalExecutor) reçoit un jeton
+# Kubernetes, limité au namespace processing : gérer les SparkApplication et lire les journaux des drivers.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: waba-airflow
+  labels: { app.kubernetes.io/part-of: waba }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: waba-airflow-spark
+rules:
+  - apiGroups: ["sparkoperator.k8s.io"]
+    resources: ["sparkapplications"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: waba-airflow-spark
+subjects:
+  - { kind: ServiceAccount, name: waba-airflow, namespace: {{ .Release.Namespace }} }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: waba-airflow-spark

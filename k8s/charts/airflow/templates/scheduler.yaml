@@ -1,0 +1,68 @@
+# Scheduler + exécution des tâches (LocalExecutor). StatefulSet + service headless : nom DNS stable
+# (airflow-scheduler-0.airflow-scheduler...) enregistré comme hostname des tâches, par lequel
+# l'api-server lit leurs journaux (serveur de logs, port 8793) ; journaux persistés sur volume.
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-scheduler
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: { app.kubernetes.io/name: airflow-scheduler }
+  ports:
+    - { name: task-logs, port: 8793, targetPort: task-logs }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: airflow-scheduler
+  labels: { app.kubernetes.io/name: airflow-scheduler, app.kubernetes.io/part-of: waba }
+spec:
+  serviceName: airflow-scheduler
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: airflow-scheduler }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: airflow-scheduler, app.kubernetes.io/part-of: waba }
+      annotations:
+        waba.io/dags-checksum: {{ include "airflow.codeChecksum" . | quote }}
+    spec:
+      serviceAccountName: waba-airflow   # seul composant autorisé à créer des SparkApplication
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: logs-permissions           # volume hostPath (Minikube) créé en root
+          image: {{ .Values.initImage }}
+          command: ["sh", "-c", "chown -R 50000:0 /opt/airflow/logs"]
+          securityContext: { runAsUser: 0 }
+          volumeMounts:
+            - { name: logs, mountPath: /opt/airflow/logs }
+        {{- include "airflow.dagsInit" . | nindent 8 }}
+        {{- include "airflow.waitForMigrations" . | nindent 8 }}
+      containers:
+        - name: scheduler
+          image: {{ .Values.image }}
+          imagePullPolicy: Never
+          args: ["scheduler"]
+          env:
+            {{- include "airflow.env" . | nindent 12 }}
+          ports:
+            - { name: task-logs, containerPort: 8793 }
+          livenessProbe:
+            exec: { command: ["airflow", "jobs", "check", "--job-type", "SchedulerJob", "--local"] }
+            initialDelaySeconds: 180
+            periodSeconds: 60
+            timeoutSeconds: 45
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.resources.scheduler | nindent 12 }}
+          volumeMounts:
+            {{- include "airflow.dagsMounts" . | nindent 12 }}
+            - { name: logs, mountPath: /opt/airflow/logs }
+      volumes:
+        {{- include "airflow.dagsVolumes" . | nindent 8 }}
+  volumeClaimTemplates:
+    - metadata: { name: logs }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: {{ .Values.logsStorage }} } }

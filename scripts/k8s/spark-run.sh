@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Lance un job Spark batch sur Kubernetes (SparkApplication) et attend son résultat.
-# Même modèle que les flux permanents (k8s/charts/spark-jobs) : une seule définition de la config Spark.
+# Même modèle que les flux permanents et qu'Airflow (k8s/charts/spark-jobs) : une seule définition Spark.
+# Usage : test manuel / dépannage ; en exploitation, les jobs batch sont lancés par les DAGs Airflow.
 #   ./scripts/k8s/spark-run.sh <nom> <script.py> [arguments...]
 #   ex. ./scripts/k8s/spark-run.sh ingest-bronze ingest_raw.py --namespace bronze
 # Code retour : 0 si COMPLETED, 1 sinon (log du driver affiché).
@@ -15,13 +16,11 @@ values=$(mktemp); trap 'rm -f "$values"' EXIT
 python3 - "$name" "$file" "$@" > "$values" <<'PY'
 import json, sys
 name, file, *args = sys.argv[1:]
-print(json.dumps({"apps": [{"name": name, "kind": "batch", "file": file, "args": args, "restart": "Never",
-                            "ttl": 3600, "driverMemory": "1g", "executorMemory": "3g",
-                            "executorCores": 2, "executorInstances": 1,
-                            "conf": {"spark.sql.shuffle.partitions": "16"}}]}))
+# ressources, TTL et conf : valeurs « batch » du chart (les mêmes que pour Airflow)
+print(json.dumps({"apps": [{"name": name, "kind": "batch", "file": file, "args": args}]}))
 PY
 kubectl -n "$NS" delete sparkapplication "$name" --ignore-not-found --wait=true >/dev/null
-helm template spark-jobs k8s/charts/spark-jobs -f "$values" | kubectl -n "$NS" apply -f -
+helm template spark-jobs k8s/charts/spark-jobs -f "$values" -s templates/apps.yaml | kubectl -n "$NS" apply -f -
 echo "job $name soumis ; suivi : kubectl -n $NS get sparkapplication $name -w"
 
 for _ in $(seq 1 360); do                 # 1 h maximum
