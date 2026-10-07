@@ -9,6 +9,8 @@
 repositories:
   - name: strimzi
     url: https://strimzi.io/charts/
+  - name: spark-operator
+    url: https://kubeflow.github.io/spark-operator
 
 helmDefaults:
   wait: true
@@ -59,3 +61,23 @@ releases:
     namespace: serving
     chart: ./charts/trino
     needs: [processing/iceberg-rest, ingestion/kafka]
+
+  # ------------------------------------------------------------ 9.3 : traitements Spark sur Kubernetes
+  - name: spark-operator
+    namespace: processing
+    chart: spark-operator/spark-operator
+    version: 2.1.1                    # opérateur kubeflow (CRD SparkApplication), Spark 3.5
+    values:
+      - spark:
+          jobNamespaces: [processing] # seul namespace où les SparkApplication sont autorisées
+          serviceAccount: { create: true, name: waba-spark }
+        controller:
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 512Mi } }
+        webhook:
+          enable: true                # requis : volumes, variables d'environnement et secrets des pods Spark
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 256Mi } }
+
+  - name: spark-jobs
+    namespace: processing
+    chart: ./charts/spark-jobs
+    needs: [processing/spark-operator, processing/iceberg-rest, ingestion/kafka]

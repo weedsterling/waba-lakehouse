@@ -22,6 +22,7 @@ declare -A GEN=(
   [AIRFLOW_API_SECRET_KEY]="$(rand_hex 32)"
   [NIFI_ADMIN_PASSWORD]="$(rand_hex 12)"
   [NIFI_SENSITIVE_PROPS_KEY]="$(rand_hex 16)"
+  [ICEBERG_DB_PASSWORD]="$(rand_hex 16)"
 )
 
 # Ajoute les clés présentes dans .env.example mais absentes de .env (nouveaux niveaux)

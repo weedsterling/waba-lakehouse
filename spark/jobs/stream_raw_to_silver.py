@@ -140,9 +140,25 @@ def process_batch(ref: Reference, run: dict):
     return _run
 
 
+REFERENCE_TABLES = ["customers", "accounts", "branches", "products", *ST.RAW_TOPICS.values()]
+
+
+def wait_for_reference(spark: SparkSession) -> None:
+    """Le flux s'appuie sur la couche Silver batch (référentiels + historique pour les barrières
+    d'outliers). Sur une plateforme neuve, on attend que le batch l'ait construite plutôt que d'échouer
+    en boucle ; les messages Kafka restent en attente (offsets non consommés), rien n'est perdu."""
+    while True:
+        missing = [t for t in REFERENCE_TABLES if not spark.catalog.tableExists(iceberg.fq(f"silver.{t}"))]
+        if not missing:
+            return
+        log.warning("couche Silver batch incomplète : attente", extra={"ctx": {"missing": missing}})
+        time.sleep(30)
+
+
 def main() -> int:
     spark = build_spark("waba-stream-raw-to-silver")
     iceberg.ensure_namespaces(spark, "silver")
+    wait_for_reference(spark)
     raw = (spark.readStream.format("kafka")
            .option("kafka.bootstrap.servers", BOOTSTRAP)
            .option("subscribe", ",".join(ST.RAW_TOPICS))

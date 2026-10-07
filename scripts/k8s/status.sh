@@ -6,3 +6,5 @@ for ns in ingestion processing serving governance monitoring; do
 done
 echo "== volumes =="; kubectl get pvc -A --no-headers | awk '{print $1, $2, $3, $5}' | column -t
 echo "== ingress =="; kubectl get ingress -A --no-headers | awk '{print $1, $2, $4}' | column -t
+echo "== applications Spark =="; kubectl -n processing get sparkapplications 2>/dev/null \
+  | awk '{print $1, $2, $3}' | column -t

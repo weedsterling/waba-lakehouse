@@ -1,8 +1,18 @@
-image: tabulario/iceberg-rest:1.6.0
+image: tabulario/iceberg-rest:1.6.0       # embarque les pilotes JDBC SQLite et PostgreSQL
 s3Endpoint: http://minio.ingestion.svc.cluster.local:9000
 warehouse: s3://lakehouse/
 region: us-east-1
-storage: 1Gi
 resources:
   requests: { cpu: 100m, memory: 384Mi }
   limits: { memory: 768Mi }
+
+# Base du catalogue : PostgreSQL (transactions concurrentes, robuste aux arrêts brutaux),
+# en remplacement de SQLite (un seul écrivain -> SQLITE_BUSY sous écritures batch + flux).
+db:
+  image: postgres:16-alpine
+  name: iceberg
+  user: iceberg
+  storage: 2Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }

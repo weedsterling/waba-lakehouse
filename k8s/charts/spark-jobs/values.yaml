@@ -1,0 +1,67 @@
+# Image Spark des Levels 1-3 (Iceberg, S3A, Kafka), chargée depuis la VM. Le CODE n'est pas lu dans
+# l'image : il est monté depuis les ConfigMaps waba-spark-jobs / waba-spark-lib (créées par
+# bootstrap.sh depuis spark/jobs et spark/waba_spark) -> même code que Docker Compose, sans rebuild.
+image: waba/spark:3.5.3-iceberg1.6.1
+serviceAccount: waba-spark          # créé par le chart spark-operator dans le namespace processing
+
+# Réservation CPU Kubernetes (requests), distincte du nombre de cœurs Spark (spark.*.cores = threads).
+# Sans elle, chaque cœur Spark réserve 1 vCPU entier : 2 flux + 1 job batch = 9 vCPU réservés sur 8
+# -> pods « Pending ». Les flux sont peu actifs entre deux micro-lots : on réserve une fraction,
+# le pod peut consommer davantage tant que le nœud a de la marge (pas de limite CPU).
+coreRequest:
+  driver: 250m
+  executor: 500m
+
+# Configuration commune (remplace spark-defaults.conf de l'image : adresses de service Kubernetes)
+sparkConf:
+  spark.sql.extensions: org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+  spark.sql.catalog.lakehouse: org.apache.iceberg.spark.SparkCatalog
+  spark.sql.catalog.lakehouse.type: rest
+  spark.sql.catalog.lakehouse.uri: http://iceberg-rest.processing.svc.cluster.local:8181
+  spark.sql.catalog.lakehouse.warehouse: s3://lakehouse/
+  spark.sql.catalog.lakehouse.io-impl: org.apache.iceberg.aws.s3.S3FileIO
+  spark.sql.catalog.lakehouse.s3.endpoint: http://minio.ingestion.svc.cluster.local:9000
+  spark.sql.catalog.lakehouse.s3.path-style-access: "true"
+  spark.sql.defaultCatalog: lakehouse
+  spark.hadoop.fs.s3a.impl: org.apache.hadoop.fs.s3a.S3AFileSystem
+  spark.hadoop.fs.s3a.endpoint: http://minio.ingestion.svc.cluster.local:9000
+  spark.hadoop.fs.s3a.path.style.access: "true"
+  spark.hadoop.fs.s3a.connection.ssl.enabled: "false"
+  spark.sql.adaptive.enabled: "true"
+  spark.sql.session.timeZone: UTC
+  spark.serializer: org.apache.spark.serializer.KryoSerializer
+
+env:
+  plain:
+    PYTHONPATH: /opt/waba
+    AWS_REGION: us-east-1
+    MINIO_ENDPOINT: http://minio.ingestion.svc.cluster.local:9000
+    KAFKA_BOOTSTRAP: waba-kafka-bootstrap.ingestion.svc.cluster.local:9092
+  secrets:                          # variable -> (secret, clé) ; secrets créés depuis .env
+    AWS_ACCESS_KEY_ID: { secret: waba-s3, key: LAKEHOUSE_ACCESS_KEY }
+    AWS_SECRET_ACCESS_KEY: { secret: waba-s3, key: LAKEHOUSE_SECRET_KEY }
+    PII_HASH_SALT: { secret: waba-pii, key: PII_HASH_SALT }
+
+# Applications déployées en permanence. Les jobs batch utilisent le même modèle
+# (scripts/k8s/spark-run.sh puis Airflow remplacent cette liste par un seul job).
+apps:
+  - name: stream-raw-silver
+    kind: streaming
+    file: stream_raw_to_silver.py
+    restart: Always                 # relancé automatiquement, reprise exacte depuis le checkpoint MinIO
+    driverMemory: 1g
+    executorMemory: 1536m
+    executorCores: 2
+    executorInstances: 1
+    conf:
+      spark.sql.shuffle.partitions: "4"
+  - name: stream-silver-gold
+    kind: streaming
+    file: stream_silver_to_gold.py
+    restart: Always
+    driverMemory: 1g
+    executorMemory: 1536m
+    executorCores: 2
+    executorInstances: 1
+    conf:
+      spark.sql.shuffle.partitions: "4"

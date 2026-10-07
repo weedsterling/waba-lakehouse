@@ -24,6 +24,9 @@ S3=("LAKEHOUSE_ACCESS_KEY=$LAKEHOUSE_ACCESS_KEY" "LAKEHOUSE_SECRET_KEY=$LAKEHOUS
 secret ingestion waba-minio-root "MINIO_ROOT_USER=$MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD"
 for ns in ingestion processing serving; do secret "$ns" waba-s3 "${S3[@]}"; done
 secret processing waba-pii "PII_HASH_SALT=$PII_HASH_SALT"
+[[ -n "${ICEBERG_DB_PASSWORD:-}" && "$ICEBERG_DB_PASSWORD" != change-me* ]] \
+  || { echo "ICEBERG_DB_PASSWORD manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
+secret processing waba-catalog-db "ICEBERG_DB_PASSWORD=$ICEBERG_DB_PASSWORD"
 secret ingestion waba-nifi "NIFI_ADMIN_USER=${NIFI_ADMIN_USER:-admin}" "NIFI_ADMIN_PASSWORD=$NIFI_ADMIN_PASSWORD" \
   "NIFI_SENSITIVE_PROPS_KEY=$NIFI_SENSITIVE_PROPS_KEY"
 
@@ -35,6 +38,9 @@ configmap() {  # namespace nom --from-file...
 configmap ingestion minio-init-script --from-file=minio-init.sh=scripts/minio-init.sh
 configmap ingestion nifi-provision-script --from-file=provision_flow.py=nifi/provision_flow.py
 configmap serving trino-kafka-tables --from-file=trino/kafka/
+# Code Spark monté dans les pods (même code que Compose, mis à jour sans reconstruire l'image)
+configmap processing waba-spark-jobs --from-file=spark/jobs/
+configmap processing waba-spark-lib --from-file=spark/waba_spark/
 
 # Noms d'hôtes des interfaces (Ingress) -> IP du cluster, dans /etc/hosts de la VM
 ip=$(minikube ip)

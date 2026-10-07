@@ -285,7 +285,7 @@ docker compose stop                # libère la mémoire : la stack Compose rest
 | Namespace | Composants |
 |---|---|
 | `ingestion` | MinIO (StatefulSet + PVC, Job d'initialisation), Kafka KRaft (opérateur Strimzi, topics `KafkaTopic`), NiFi (StatefulSet, flux provisionné par Job), générateur |
-| `processing` | Catalogue Iceberg REST (PVC SQLite), Spark Operator, Airflow |
+| `processing` | Catalogue Iceberg REST adossé à PostgreSQL (StatefulSet + PVC), Spark Operator (kubeflow) : flux `stream-raw-silver` / `stream-silver-gold` en `SparkApplication` (`restartPolicy: Always`), jobs batch via `scripts/k8s/spark-run.sh` puis Airflow |
 | `serving` | Trino (catalogues Iceberg + Kafka), Superset |
 | `governance` | Keycloak, OpenMetadata |
 | `monitoring` | Prometheus, Grafana, Loki |

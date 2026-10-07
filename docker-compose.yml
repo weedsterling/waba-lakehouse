@@ -91,6 +91,7 @@ services:
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
       # Persistance du catalogue (SQLite sur volume) : survit aux redémarrages
       CATALOG_URI: jdbc:sqlite:file:/home/iceberg/iceberg_catalog.db
+      CATALOG_CLIENTS: "1"          # SQLite = un seul écrivain : connexion unique (évite SQLITE_BUSY)
     ports: ["8181:8181"]
     volumes: [iceberg-catalog:/home/iceberg]
     restart: unless-stopped

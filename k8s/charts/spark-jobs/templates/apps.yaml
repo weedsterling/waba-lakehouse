@@ -1,0 +1,80 @@
+{{- range .Values.apps }}
+{{- $app := . }}
+---
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: {{ $app.name }}
+  labels:
+    app.kubernetes.io/part-of: waba
+    waba.io/kind: {{ $app.kind }}
+spec:
+  type: Python
+  pythonVersion: "3"
+  mode: cluster
+  image: {{ $.Values.image }}
+  imagePullPolicy: Never
+  mainApplicationFile: local:///opt/waba/jobs/{{ $app.file }}
+  sparkVersion: "3.5.3"
+  {{- if $app.args }}
+  arguments:
+  {{- range $app.args }}
+    - {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  {{- if $app.ttl }}
+  timeToLiveSeconds: {{ $app.ttl }}
+  {{- end }}
+  restartPolicy:
+    type: {{ $app.restart }}
+    {{- if eq $app.restart "Always" }}
+    onFailureRetryInterval: 30
+    onSubmissionFailureRetryInterval: 30
+    {{- end }}
+  sparkConf:
+  {{- range $k, $v := $.Values.sparkConf }}
+    {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- range $k, $v := $app.conf }}
+    {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  volumes:
+    - name: jobs
+      configMap: { name: waba-spark-jobs }
+    - name: lib
+      configMap: { name: waba-spark-lib }
+  driver:
+    cores: 1
+    coreRequest: {{ $.Values.coreRequest.driver | quote }}
+    memory: {{ $app.driverMemory | quote }}
+    serviceAccount: {{ $.Values.serviceAccount }}
+    labels: { app.kubernetes.io/part-of: waba, waba.io/app: {{ $app.name }} }
+    env:
+    {{- range $k, $v := $.Values.env.plain }}
+      - { name: {{ $k }}, value: {{ $v | quote }} }
+    {{- end }}
+    {{- range $k, $v := $.Values.env.secrets }}
+      - name: {{ $k }}
+        valueFrom: { secretKeyRef: { name: {{ $v.secret }}, key: {{ $v.key }} } }
+    {{- end }}
+    volumeMounts:
+      - { name: jobs, mountPath: /opt/waba/jobs }
+      - { name: lib, mountPath: /opt/waba/waba_spark }
+  executor:
+    instances: {{ $app.executorInstances }}
+    cores: {{ $app.executorCores }}
+    coreRequest: {{ $.Values.coreRequest.executor | quote }}
+    memory: {{ $app.executorMemory | quote }}
+    labels: { app.kubernetes.io/part-of: waba, waba.io/app: {{ $app.name }} }
+    env:
+    {{- range $k, $v := $.Values.env.plain }}
+      - { name: {{ $k }}, value: {{ $v | quote }} }
+    {{- end }}
+    {{- range $k, $v := $.Values.env.secrets }}
+      - name: {{ $k }}
+        valueFrom: { secretKeyRef: { name: {{ $v.secret }}, key: {{ $v.key }} } }
+    {{- end }}
+    volumeMounts:
+      - { name: jobs, mountPath: /opt/waba/jobs }
+      - { name: lib, mountPath: /opt/waba/waba_spark }
+{{- end }}

@@ -5,7 +5,7 @@ metadata:
   labels: { app.kubernetes.io/name: iceberg-rest, app.kubernetes.io/part-of: waba }
 spec:
   replicas: 1
-  strategy: { type: Recreate }            # volume RWO + SQLite : jamais deux instances en parallèle
+  strategy: { type: Recreate }
   selector:
     matchLabels: { app.kubernetes.io/name: iceberg-rest }
   template:
@@ -13,11 +13,9 @@ spec:
       labels: { app.kubernetes.io/name: iceberg-rest, app.kubernetes.io/part-of: waba }
     spec:
       initContainers:
-        - name: volume-permissions        # l'image tourne en utilisateur non root
-          image: busybox:1.36
-          command: ["sh", "-c", "chmod 0777 /data"]
-          volumeMounts:
-            - { name: catalog, mountPath: /data }
+        - name: wait-for-db               # le catalogue initialise son schéma JDBC au démarrage
+          image: {{ .Values.db.image }}
+          command: ["sh", "-c", "until pg_isready -h iceberg-catalog-db -U {{ .Values.db.user }}; do sleep 3; done"]
       containers:
         - name: iceberg-rest
           image: {{ .Values.image }}
@@ -26,7 +24,10 @@ spec:
             - { name: CATALOG_IO__IMPL, value: org.apache.iceberg.aws.s3.S3FileIO }
             - { name: CATALOG_S3_ENDPOINT, value: "{{ .Values.s3Endpoint }}" }
             - { name: CATALOG_S3_PATH__STYLE__ACCESS, value: "true" }
-            - { name: CATALOG_URI, value: "jdbc:sqlite:file:/home/iceberg/data/iceberg_catalog.db" }
+            - { name: CATALOG_URI, value: "jdbc:postgresql://iceberg-catalog-db:5432/{{ .Values.db.name }}" }
+            - { name: CATALOG_JDBC_USER, value: {{ .Values.db.user | quote }} }
+            - name: CATALOG_JDBC_PASSWORD
+              valueFrom: { secretKeyRef: { name: waba-catalog-db, key: ICEBERG_DB_PASSWORD } }
             - { name: AWS_REGION, value: "{{ .Values.region }}" }
             - name: AWS_ACCESS_KEY_ID
               valueFrom: { secretKeyRef: { name: waba-s3, key: LAKEHOUSE_ACCESS_KEY } }
@@ -45,8 +46,3 @@ spec:
           resources:
             requests: { cpu: {{ .Values.resources.requests.cpu }}, memory: {{ .Values.resources.requests.memory }} }
             limits: { memory: {{ .Values.resources.limits.memory }} }
-          volumeMounts:
-            - { name: catalog, mountPath: /home/iceberg/data }
-      volumes:
-        - name: catalog
-          persistentVolumeClaim: { claimName: iceberg-catalog }
