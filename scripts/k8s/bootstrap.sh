@@ -33,6 +33,11 @@ done
 secret processing waba-airflow "AIRFLOW_DB_PASSWORD=$AIRFLOW_DB_PASSWORD" "AIRFLOW_FERNET_KEY=$AIRFLOW_FERNET_KEY" \
   "AIRFLOW_JWT_SECRET=$AIRFLOW_JWT_SECRET" "AIRFLOW_API_SECRET_KEY=$AIRFLOW_API_SECRET_KEY" \
   "passwords.json={\"admin\": \"$AIRFLOW_ADMIN_PASSWORD\"}"          # UI Airflow (SimpleAuthManager)
+for v in SUPERSET_SECRET_KEY SUPERSET_DB_PASSWORD SUPERSET_ADMIN_PASSWORD; do
+  [[ -n "${!v:-}" && "${!v}" != change-me* ]] || { echo "$v manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
+done
+secret serving waba-superset "SUPERSET_SECRET_KEY=$SUPERSET_SECRET_KEY" "SUPERSET_DB_PASSWORD=$SUPERSET_DB_PASSWORD" \
+  "SUPERSET_ADMIN_PASSWORD=$SUPERSET_ADMIN_PASSWORD"
 secret ingestion waba-nifi "NIFI_ADMIN_USER=${NIFI_ADMIN_USER:-admin}" "NIFI_ADMIN_PASSWORD=$NIFI_ADMIN_PASSWORD" \
   "NIFI_SENSITIVE_PROPS_KEY=$NIFI_SENSITIVE_PROPS_KEY"
 
@@ -50,6 +55,9 @@ configmap processing waba-spark-lib --from-file=spark/waba_spark/
 # DAGs Airflow (+ paquet waba/) : le scheduler et le dag-processor redémarrent si leur contenu change
 configmap processing waba-airflow-dags --from-file=airflow/dags/
 configmap processing waba-airflow-lib --from-file=airflow/dags/waba/
+# Superset : configuration + tableaux de bord as code (importés par le Job d'init à chaque déploiement)
+configmap serving superset-config --from-file=superset_config.py=superset/superset_config.py
+configmap serving superset-dashboards --from-file=waba_dashboards.py=superset/dashboards/waba_dashboards.py
 
 # Noms d'hôtes des interfaces (Ingress) -> IP du cluster, dans /etc/hosts de la VM
 ip=$(minikube ip)

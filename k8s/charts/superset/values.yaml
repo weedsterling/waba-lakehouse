@@ -1,0 +1,20 @@
+# Image officielle + pilotes Trino/PostgreSQL (superset/Dockerfile), construite et chargée par deploy.sh
+image: waba/superset:6.1.0
+host: superset.waba.local
+# Connexion Trino (SQLAlchemy) : utilisateur technique « superset », sans mot de passe tant que Trino
+# n'a pas d'authentification (SSO Keycloak à l'étape 9.6)
+trinoUri: trino://superset@trino.serving.svc.cluster.local:8080/lakehouse
+
+web:
+  workers: 2                  # processus gunicorn (gthread)
+  threads: 8
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1536Mi }
+
+db:
+  image: postgres:16-alpine
+  storage: 1Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }

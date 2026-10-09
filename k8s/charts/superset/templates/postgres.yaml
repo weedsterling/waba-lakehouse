@@ -1,0 +1,52 @@
+# Base de métadonnées Superset (tableaux de bord, graphiques, rôles, Row Level Security).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: superset-postgres
+  labels: { app.kubernetes.io/name: superset-postgres, app.kubernetes.io/part-of: waba }
+spec:
+  serviceName: superset-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: superset-postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: superset-postgres, app.kubernetes.io/part-of: waba }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: {{ .Values.db.image }}
+          env:
+            - { name: POSTGRES_DB, value: superset }
+            - { name: POSTGRES_USER, value: superset }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: waba-superset, key: SUPERSET_DB_PASSWORD } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: pg, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "superset", "-d", "superset"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "superset", "-d", "superset"] }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.db.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: {{ .Values.db.storage }} } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: superset-postgres
+spec:
+  selector: { app.kubernetes.io/name: superset-postgres }
+  ports:
+    - { name: pg, port: 5432, targetPort: pg }

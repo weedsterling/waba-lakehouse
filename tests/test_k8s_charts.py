@@ -31,3 +31,10 @@ def test_airflow_passwords_file_is_writable():
     tpl = (ROOT / "charts/airflow/templates/api-server.yaml").read_text()
     assert "{ name: auth, mountPath: /opt/airflow/auth }" in tpl
     assert "emptyDir: { medium: Memory" in tpl and "chown 50000:0 /auth/passwords.json" in tpl
+
+
+def test_superset_pods_disable_service_links():
+    """Régression : le Service « superset » injecterait SUPERSET_PORT=tcp://… dans le pod, lu comme port
+    par gunicorn (CrashLoopBackOff « 'tcp' is not a valid port number »)."""
+    for f in ("web.yaml", "init-job.yaml"):
+        assert "enableServiceLinks: false" in (ROOT / "charts/superset/templates" / f).read_text(), f

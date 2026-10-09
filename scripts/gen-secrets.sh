@@ -23,6 +23,9 @@ declare -A GEN=(
   [NIFI_ADMIN_PASSWORD]="$(rand_hex 12)"
   [NIFI_SENSITIVE_PROPS_KEY]="$(rand_hex 16)"
   [ICEBERG_DB_PASSWORD]="$(rand_hex 16)"
+  [SUPERSET_SECRET_KEY]="$(rand_hex 32)"
+  [SUPERSET_DB_PASSWORD]="$(rand_hex 16)"
+  [SUPERSET_ADMIN_PASSWORD]="$(rand_hex 8)"
 )
 
 # Ajoute les clés présentes dans .env.example mais absentes de .env (nouveaux niveaux)
@@ -41,3 +44,4 @@ done
 chmod 600 .env
 echo "Mot de passe de l'interface NiFi (utilisateur admin) : $(grep '^NIFI_ADMIN_PASSWORD=' .env | cut -d= -f2)"
 echo "Mot de passe de l'interface Airflow (utilisateur admin) : $(grep '^AIRFLOW_ADMIN_PASSWORD=' .env | cut -d= -f2)"
+echo "Mot de passe de l'interface Superset (utilisateur admin) : $(grep '^SUPERSET_ADMIN_PASSWORD=' .env | cut -d= -f2)"

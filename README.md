@@ -286,7 +286,7 @@ docker compose stop                # libère la mémoire : la stack Compose rest
 |---|---|
 | `ingestion` | MinIO (StatefulSet + PVC, Job d'initialisation), Kafka KRaft (opérateur Strimzi, topics `KafkaTopic`), NiFi (StatefulSet, flux provisionné par Job), générateur |
 | `processing` | Catalogue Iceberg REST adossé à PostgreSQL (StatefulSet + PVC), Spark Operator (kubeflow) : flux `stream-raw-silver` / `stream-silver-gold` en `SparkApplication` (`restartPolicy: Always`) ; Airflow 3 (api-server, scheduler LocalExecutor en StatefulSet, dag-processor, triggerer, PostgreSQL) : chaque tâche Spark des DAGs devient une `SparkApplication` (`waba/spark_k8s.py`, modèle unique rendu par le chart `spark-jobs`) |
-| `serving` | Trino (catalogues Iceberg + Kafka), Superset |
+| `serving` | Trino (catalogues Iceberg + Kafka), Superset 6.1 (3 tableaux de bord importés depuis le dépôt, PostgreSQL) |
 | `governance` | Keycloak, OpenMetadata |
 | `monitoring` | Prometheus, Grafana, Loki |
 
@@ -299,3 +299,9 @@ Les DAGs sont ceux des Levels 2-3, inchangés : `WABA_SPARK_MODE=kubernetes` fai
 Après modification d'un DAG : `./scripts/k8s/bootstrap.sh && helmfile -f k8s/helmfile.yaml -l name=airflow sync`
 (ConfigMaps mises à jour, scheduler et dag-processor redémarrés automatiquement par empreinte).
 CLI : `./scripts/k8s/airflow.sh dags list`.
+
+**Superset** — http://superset.waba.local (admin / `SUPERSET_ADMIN_PASSWORD` de `.env`). Tableaux de bord
+*as code* (`superset/dashboards/waba_dashboards.py`) : 10 jeux de données SQL Trino, 15 graphiques, 3 tableaux
+de bord (Performance commerciale, Risque & conformité BCEAO/CIMA, Mobile Money & transferts), filtre « Pays »
+natif. Importés à chaque `helmfile sync` (UUID déterministes : mise à jour sans doublon, Git fait foi).
+Contrôle des requêtes dans Trino : `python3 superset/dashboards/waba_dashboards.py --check-sql | ./scripts/k8s/trino.sh`.

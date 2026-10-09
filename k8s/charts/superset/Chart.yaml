@@ -1,0 +1,6 @@
+apiVersion: v2
+name: superset
+description: "WABA — Apache Superset 6 connecté à Trino ; 3 tableaux de bord importés depuis le dépôt (as code)"
+type: application
+version: 0.1.1
+appVersion: "6.1.0"

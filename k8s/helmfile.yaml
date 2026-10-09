@@ -88,3 +88,10 @@ releases:
     chart: ./charts/airflow
     needs: [processing/spark-jobs]    # modèle des jobs batch (ConfigMap spark-batch-template)
     timeout: 1200                     # migration initiale du schéma + démarrage des 3 composants
+
+  # ------------------------------------------------------------ 9.5 : visualisation
+  - name: superset
+    namespace: serving
+    chart: ./charts/superset
+    needs: [serving/trino]
+    timeout: 1200                     # migration du schéma + import des tableaux de bord

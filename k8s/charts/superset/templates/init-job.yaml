@@ -1,0 +1,50 @@
+# Initialisation idempotente, rejouée à chaque `helmfile sync` (un Job par révision) :
+# schéma, compte admin (mot de passe aligné sur .env), rôles, puis import des tableaux de bord du dépôt
+# (écrasement : la version Git fait foi, pas de doublon grâce aux UUID déterministes).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: superset-init-{{ .Release.Revision }}
+  labels: { app.kubernetes.io/name: superset-init, app.kubernetes.io/part-of: waba }
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: superset-init, app.kubernetes.io/part-of: waba }
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-for-db
+          image: {{ .Values.db.image }}
+          command: ["sh", "-c", "until pg_isready -h superset-postgres -U superset; do sleep 3; done"]
+      containers:
+        - name: init
+          image: {{ .Values.image }}
+          imagePullPolicy: Never
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              superset db upgrade
+              superset fab create-admin --username admin --firstname WABA --lastname Admin \
+                --email admin@waba.local --password "$SUPERSET_ADMIN_PASSWORD"
+              superset fab reset-password --username admin --password "$SUPERSET_ADMIN_PASSWORD"
+              superset init
+              python /app/waba/dashboards/waba_dashboards.py /tmp/waba_dashboards.zip --sqlalchemy-uri "$TRINO_URI"
+              superset import-dashboards -p /tmp/waba_dashboards.zip -u admin
+              echo "Superset initialisé, tableaux de bord importés"
+          env:
+            {{- include "superset.env" . | nindent 12 }}
+            - name: SUPERSET_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: waba-superset, key: SUPERSET_ADMIN_PASSWORD } }
+            - { name: TRINO_URI, value: {{ .Values.trinoUri | quote }} }
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { memory: 1536Mi }
+          volumeMounts:
+            {{- include "superset.mounts" . | nindent 12 }}
+      volumes:
+        {{- include "superset.volumes" . | nindent 8 }}
