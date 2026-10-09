@@ -293,6 +293,10 @@ docker compose stop                # libère la mémoire : la stack Compose rest
 Secrets Kubernetes créés par `scripts/k8s/bootstrap.sh` depuis `.env` (rien dans les manifestes),
 sondes liveness/readiness sur chaque composant, interfaces exposées par Ingress (`*.waba.local`).
 
+**Après un redémarrage de la VM** : `./scripts/k8s/cluster-up.sh` redémarre le cluster existant, données
+comprises (flux Spark et Airflow repartent seuls). Le script ne supprime jamais le cluster de lui-même :
+une recréation (perte des données) exige `WABA_RECREATE_CLUSTER=1 ./scripts/k8s/cluster-up.sh`.
+
 **Airflow sur Kubernetes** — http://airflow.waba.local (admin / `AIRFLOW_ADMIN_PASSWORD` de `.env`).
 Les DAGs sont ceux des Levels 2-3, inchangés : `WABA_SPARK_MODE=kubernetes` fait de `spark_job()` une
 `SparkApplication` (compte de service `waba-airflow`, RBAC limité au namespace `processing`).

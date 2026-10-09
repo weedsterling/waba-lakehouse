@@ -38,3 +38,15 @@ def test_superset_pods_disable_service_links():
     par gunicorn (CrashLoopBackOff « 'tcp' is not a valid port number »)."""
     for f in ("web.yaml", "init-job.yaml"):
         assert "enableServiceLinks: false" in (ROOT / "charts/superset/templates" / f).read_text(), f
+
+
+def test_cluster_is_never_deleted_implicitly():
+    """Régression (perte du cluster 08-09/10) : seul WABA_RECREATE_CLUSTER=1 peut supprimer Minikube,
+    et la configuration DNS de Docker ne dépend plus de la passerelle NAT (adresse variable)."""
+    scripts = ROOT.parent / "scripts" / "k8s"
+    up = (scripts / "cluster-up.sh").read_text()
+    lines = [line for line in up.splitlines() if "minikube delete" in line and not line.strip().startswith("#")]
+    assert len(lines) == 1
+    guard = up[up.index('if [[ "${WABA_RECREATE_CLUSTER:-0}" == "1" ]]'):up.index(lines[0])]
+    assert guard.count("fi") == 0                       # la suppression est dans le bloc conditionnel
+    assert "resolv.conf" not in (scripts / "docker-dns.sh").read_text().split("set -euo pipefail")[1]

@@ -5,14 +5,17 @@
 # Symptôme : « lookup ghcr.io on 192.168.49.1:53: server misbehaving » (SERVFAIL) dans le cluster,
 # alors que la VM résout correctement. Cause : le DNS interne de Docker relaie vers le résolveur
 # local de la VM (systemd-resolved, 127.0.0.53), qui n'est pas joignable de façon fiable depuis le
-# réseau du conteneur. Correctif : donner à Docker les vrais serveurs DNS en amont (ceux de
-# systemd-resolved, ex. la passerelle NAT VMware) + deux résolveurs publics de secours.
+# réseau du conteneur. Correctif : donner à Docker des résolveurs publics FIXES.
+#
+# Volontairement SANS le DNS de la passerelle NAT VMware : son adresse (192.168.<sous-réseau>.2) change
+# à chaque redémarrage du service NAT de l'hôte ; l'inclure rendait la configuration instable, et chaque
+# changement entraînait une reconfiguration de Docker (cause des pertes de cluster du 08-09/10).
+# Surcharge possible (réseau d'entreprise filtrant le DNS public) : WABA_DOCKER_DNS="10.0.0.53 10.0.0.54"
 # Idempotent : ne modifie /etc/docker/daemon.json (en conservant ses autres clés) que si nécessaire.
-# Code de retour 10 : configuration modifiée (Docker redémarré, nœud Minikube à recréer).
+# Code de retour 10 : configuration modifiée (Docker redémarré ; le cluster Minikube est conservé).
 # =============================================================================
 set -euo pipefail
-upstream=$(awk '/^nameserver/ && $2 !~ /^127\./ {print $2}' /run/systemd/resolve/resolv.conf 2>/dev/null || true)
-servers=$(printf '%s\n' $upstream 1.1.1.1 8.8.8.8 | awk 'NF && !seen[$0]++')
+servers=${WABA_DOCKER_DNS:-"1.1.1.1 8.8.8.8 9.9.9.9"}
 json=$(printf '%s\n' $servers | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')
 
 current=$(sudo python3 -c 'import json,os; p="/etc/docker/daemon.json"; print(json.dumps(json.load(open(p)).get("dns", [])) if os.path.exists(p) else "[]")')

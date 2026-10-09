@@ -10,27 +10,45 @@ cd "$(dirname "$0")/../.."
 # (« UnrecognizedPropertyException », l'opérateur redémarre en boucle). 1.32 est supportée par tous.
 K8S_VERSION=v1.32.5
 
-# Prérequis réseau : DNS fiable pour les conteneurs. Si la configuration Docker change, le nœud
-# Minikube (créé avec l'ancienne) est recréé — sans perte, le cluster ne contient encore rien d'utile.
+# RÈGLE : ce script ne détruit JAMAIS le cluster de lui-même (il contient les données du lakehouse :
+# MinIO, catalogue, bases Airflow/Superset). Une recréation exige WABA_RECREATE_CLUSTER=1, explicitement.
+
+# Prérequis réseau : DNS fiable pour les conteneurs. Un changement de configuration redémarre Docker,
+# ce qui arrête le nœud Minikube : il est simplement redémarré plus bas (données conservées).
 rc=0; ./scripts/k8s/docker-dns.sh || rc=$?
-if [[ $rc -eq 10 ]]; then
-  minikube delete >/dev/null 2>&1 || true
-elif [[ $rc -ne 0 ]]; then
+if [[ $rc -ne 0 && $rc -ne 10 ]]; then
   exit $rc
 fi
 
-# Cluster existant dans une autre version : Minikube refuse de rétrograder -> recréation
+if [[ "${WABA_RECREATE_CLUSTER:-0}" == "1" ]]; then
+  echo "WABA_RECREATE_CLUSTER=1 : suppression du cluster existant et de TOUTES ses données"
+  minikube delete
+fi
+
+# Cluster existant dans une autre version : Minikube refuse de rétrograder -> arrêt, décision humaine
 if minikube status >/dev/null 2>&1; then
   current=$(kubectl version -o json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["serverVersion"]["gitVersion"])' || true)
   if [[ -n "$current" && "$current" != "$K8S_VERSION" ]]; then
-    echo "Cluster en $current, version attendue $K8S_VERSION : recréation du cluster"
-    minikube delete
+    echo "✘ cluster en $current, version attendue $K8S_VERSION. Pour le recréer (perte des données) :" >&2
+    echo "  WABA_RECREATE_CLUSTER=1 ./scripts/k8s/cluster-up.sh" >&2
+    exit 1
+  fi
+fi
+
+# Mémoire du nœud = RAM de la VM - 4 Go. Minikube la fige à la création du conteneur : si la VM a reçu
+# plus de RAM depuis, la limite du conteneur existant est relevée à chaud (docker update), sans recréation.
+total_mb=$(free -m | awk '/^Mem:/ {print $2}')
+mem=$(( total_mb - 4096 ))
+if docker inspect minikube >/dev/null 2>&1; then
+  have_mb=$(( $(docker inspect -f '{{.HostConfig.Memory}}' minikube) / 1048576 ))
+  if (( have_mb > 0 && have_mb + 512 < mem )); then
+    echo "Mémoire du nœud Minikube : ${have_mb} -> ${mem} Mo"
+    docker update --memory "${mem}m" --memory-swap "${mem}m" minikube >/dev/null
   fi
 fi
 
 if ! minikube status >/dev/null 2>&1; then
-  total_mb=$(free -m | awk '/^Mem:/ {print $2}')
-  mem=$(( total_mb - 4096 ))
+  # Profil existant (VM redémarrée, Docker relancé) : minikube le redémarre tel quel, données comprises
   echo "Démarrage de Minikube : $(nproc) vCPU, ${mem} Mo"
   minikube start --driver=docker --kubernetes-version="$K8S_VERSION" \
     --cpus="$(nproc)" --memory="${mem}m" --addons=ingress,metrics-server
