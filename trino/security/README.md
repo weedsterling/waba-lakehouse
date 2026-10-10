@@ -8,7 +8,8 @@
 Montés par ConfigMap (`trino-security`, créée par `scripts/k8s/bootstrap.sh`) et relus toutes les 60 s :
 une modification est appliquée sans redémarrer Trino.
 
-Authentification : OAuth2 Keycloak pour l'interface web et les clients HTTPS (https://trino.waba.local).
-Les connexions HTTP internes au cluster (Superset, OpenMetadata, CLI) ne sont pas authentifiées par Trino :
-elles portent un utilisateur technique en lecture seule. En production : TLS de bout en bout, mot de passe ou
+Authentification : OAuth2 Keycloak pour l'interface web (https://trino.waba.local).
+Le protocole client n'est exposé que dans le cluster (Superset, OpenMetadata, CLI) : Trino n'y authentifie
+pas l'appelant (activer un authentificateur client fait refuser tout appel HTTP, et le client Python refuse
+d'envoyer un mot de passe sans TLS) ; l'identité est portée par des comptes techniques en lecture seule. En production : TLS de bout en bout, mot de passe ou
 JWT pour ces comptes et NetworkPolicy limitant l'accès au port 8080.

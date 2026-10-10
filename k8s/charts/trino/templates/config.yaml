@@ -13,9 +13,12 @@ data:
     http-server.process-forwarded=true
     internal-communication.shared-secret=${ENV:TRINO_SHARED_SECRET}
     {{- if .Values.sso.enabled }}
-    # OAuth2 Keycloak : interface web et clients HTTPS. Les requêtes HTTP internes au cluster (Superset,
-    # CLI) restent non authentifiées (allow-insecure-over-http=false par défaut : pas d'auth sur HTTP).
-    http-server.authentication.type=oauth2
+    # SSO Keycloak (OAuth2) pour l'INTERFACE WEB uniquement (https://trino.waba.local, TLS à l'Ingress).
+    # Pas de http-server.authentication.type : dès qu'un authentificateur client est déclaré, Trino refuse
+    # tout appel HTTP (« Authentication over HTTP is not enabled »), y compris ceux de Superset et de la CLI
+    # dans le cluster, et le client Python refuse d'envoyer un mot de passe en HTTP. Le protocole client reste
+    # donc interne au cluster, identité portée par les comptes techniques et règles d'accès par fichier.
+    # Production : TLS interne + mot de passe / JWT pour ces comptes (cf. trino/security/README.md).
     web-ui.authentication.type=oauth2
     http-server.authentication.oauth2.issuer={{ .Values.sso.issuer }}
     http-server.authentication.oauth2.client-id=trino

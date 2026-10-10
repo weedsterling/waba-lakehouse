@@ -50,3 +50,12 @@ def test_cluster_is_never_deleted_implicitly():
     guard = up[up.index('if [[ "${WABA_RECREATE_CLUSTER:-0}" == "1" ]]'):up.index(lines[0])]
     assert guard.count("fi") == 0                       # la suppression est dans le bloc conditionnel
     assert "resolv.conf" not in (scripts / "docker-dns.sh").read_text().split("set -euo pipefail")[1]
+
+
+def test_trino_client_protocol_stays_usable_over_http():
+    """Régression : http-server.authentication.type=oauth2 faisait refuser par Trino tous les appels HTTP
+    internes (Superset : « 403 Authentication over HTTP is not enabled ») -> SSO limité à l'interface web."""
+    cfg = (ROOT / "charts/trino/templates/config.yaml").read_text()
+    active = [line.strip() for line in cfg.splitlines() if not line.strip().startswith("#")]
+    assert not any(line.startswith("http-server.authentication.type") for line in active)
+    assert "web-ui.authentication.type=oauth2" in active

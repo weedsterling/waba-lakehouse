@@ -2,5 +2,5 @@ apiVersion: v2
 name: trino
 description: "WABA — Trino mono-nœud : catalogues Iceberg + Kafka, SSO OAuth2 Keycloak, contrôle d'accès par fichier"
 type: application
-version: 0.2.0
+version: 0.2.1
 appVersion: "467"
