@@ -19,6 +19,8 @@ case "${1:-}" in
     kubectl -n $NS patch cronjob openmetadata-catalog -p '{"spec":{"suspend":false}}' >/dev/null
     echo "✔ OpenMetadata : http://openmetadata.waba.local (admin@open-metadata.org / OM_ADMIN_PASSWORD de .env)" ;;
   catalog)
+    ready=$(kubectl -n $NS get deployment openmetadata -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)
+    [[ "${ready:-0}" -ge 1 ]] || { echo "✘ OpenMetadata n'est pas démarré : lancer d'abord $0 up" >&2; exit 1; }
     job="catalog-$(date +%Y%m%d%H%M%S)"
     kubectl -n $NS create job "$job" --from=cronjob/openmetadata-catalog
     kubectl -n $NS wait --for=condition=ready pod -l job-name="$job" --timeout=300s >/dev/null || true

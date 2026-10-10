@@ -217,6 +217,26 @@ def tag_label(tag_fqn: str):
 # --------------------------------------------------------------------------- #
 # Exécution contre le serveur
 # --------------------------------------------------------------------------- #
+def wait_for_server(base: str, timeout_s: int = 900) -> None:
+    """Le CronJob peut démarrer pendant que le serveur migre son schéma : attente explicite, message clair."""
+    import time
+
+    import requests
+
+    deadline = time.time() + timeout_s
+    while True:
+        try:
+            if requests.get(f"{base}/api/v1/system/version", timeout=10).ok:
+                return
+        except requests.RequestException:
+            pass
+        if time.time() > deadline:
+            raise SystemExit(f"OpenMetadata injoignable sur {base} après {timeout_s} s : "
+                             "lancer `./scripts/k8s/governance.sh up` et vérifier le pod openmetadata")
+        print("attente du serveur OpenMetadata…", flush=True)
+        time.sleep(15)
+
+
 def admin_token(base: str) -> str:
     import requests
 
@@ -274,6 +294,7 @@ def run(dry_run: bool) -> int:
     from metadata.workflow.metadata import MetadataWorkflow
 
     base = os.environ.get("OM_URL", "http://openmetadata:8585")
+    wait_for_server(base)
     token = admin_token(base)
     om = OpenMetadata(OpenMetadataConnection(hostPort=f"{base}/api", authProvider="openmetadata",
                                              securityConfig=OpenMetadataJWTClientConfig(jwtToken=token)))
