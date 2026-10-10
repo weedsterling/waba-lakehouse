@@ -91,7 +91,8 @@ def test_no_secret_in_monitoring_values_and_least_privilege_collector():
     assert "adminPassword" not in kps and KPS["grafana"]["admin"]["existingSecret"] == "waba-grafana"
     alloy = yaml.safe_load((K8S / "monitoring/alloy.yaml").read_text())
     resources = {res for rule in alloy["rbac"]["rules"] for res in rule["resources"]}
-    assert resources == {"pods", "pods/log", "namespaces"}        # ni secrets ni configmaps
+    assert resources == {"pods", "pods/log"}                      # ni secrets ni configmaps
+    assert "clusterRules" not in alloy["rbac"] and alloy["rbac"]["namespaces"]   # Roles, pas de ClusterRole
     assert "loki.monitoring.svc.cluster.local:3100" in alloy["alloy"]["configMap"]["content"]
 
 

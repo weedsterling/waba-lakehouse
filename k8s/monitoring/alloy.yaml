@@ -4,8 +4,8 @@
 #   * lecture via l'API Kubernetes (loki.source.kubernetes) : ni hostPath ni conteneur privilégié ;
 #   * journaux JSON des jobs (Spark, Airflow, générateur) : le niveau devient le label « level »
 #     -> requêtes du type {namespace="processing", level="ERROR"} dans Grafana ;
-#   * RBAC réduit au strict nécessaire (pods, logs, namespaces) : le chart accorde par défaut la lecture
-#     des Secrets et ConfigMaps de tout le cluster, inutile ici.
+#   * RBAC réduit au strict nécessaire (pods et journaux, 5 namespaces) : le chart accorde par défaut la
+#     lecture des Secrets et ConfigMaps de tout le cluster, inutile ici.
 # =============================================================================
 crds:
   create: false                   # pas de CRD PodLogs : la découverte se fait par l'API des pods
@@ -14,13 +14,15 @@ controller:
   type: deployment                # un seul collecteur suffit pour un nœud (lecture par l'API, pas par le disque)
   replicas: 1
 
+# Rôles par namespace (pas de ClusterRole) : lecture des pods et de leurs journaux, rien d'autre.
+# NB : une liste clusterRules vide casse le rendu du chart (« did not find expected '-' indicator »).
 rbac:
   create: true
+  namespaces: [ingestion, processing, serving, governance, monitoring]
   rules:
     - apiGroups: [""]
-      resources: ["pods", "pods/log", "namespaces"]
+      resources: ["pods", "pods/log"]
       verbs: ["get", "list", "watch"]
-  clusterRules: []
 
 alloy:
   enableReporting: false
