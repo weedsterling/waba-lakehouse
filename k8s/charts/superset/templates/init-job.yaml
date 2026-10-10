@@ -1,6 +1,7 @@
 # Initialisation idempotente, rejouée à chaque `helmfile sync` (un Job par révision) :
-# schéma, compte admin (mot de passe aligné sur .env), rôles, puis import des tableaux de bord du dépôt
-# (écrasement : la version Git fait foi, pas de doublon grâce aux UUID déterministes).
+# schéma, compte admin technique (propriétaire des objets importés ; connexion à l'UI par Keycloak), rôles,
+# puis provisionnement depuis le dépôt (waba_provision.py) : base, jeux de données, graphiques, tableaux de
+# bord en mode écrasement (Git fait foi), puis rôles métier, droits et Row Level Security (waba_security.py).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -33,9 +34,8 @@ spec:
                 --email admin@waba.local --password "$SUPERSET_ADMIN_PASSWORD"
               superset fab reset-password --username admin --password "$SUPERSET_ADMIN_PASSWORD"
               superset init
-              python /app/waba/dashboards/waba_dashboards.py /tmp/waba_dashboards.zip --sqlalchemy-uri "$TRINO_URI"
-              superset import-dashboards -p /tmp/waba_dashboards.zip -u admin
-              echo "Superset initialisé, tableaux de bord importés"
+              python /app/waba/dashboards/waba_provision.py --sqlalchemy-uri "$TRINO_URI"
+              echo "Superset initialisé : tableaux de bord et sécurité appliqués"
           env:
             {{- include "superset.env" . | nindent 12 }}
             - name: SUPERSET_ADMIN_PASSWORD

@@ -1,0 +1,39 @@
+# Configuration du serveur (remplace celle de l'image) + contrôle d'accès et groupes (étape 9.6).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-config
+data:
+  config.properties: |
+    coordinator=true
+    node-scheduler.include-coordinator=true
+    http-server.http.port=8080
+    discovery.uri=http://localhost:8080
+    # TLS terminé par l'Ingress : X-Forwarded-Proto=https -> requête considérée comme sécurisée
+    http-server.process-forwarded=true
+    internal-communication.shared-secret=${ENV:TRINO_SHARED_SECRET}
+    {{- if .Values.sso.enabled }}
+    # OAuth2 Keycloak : interface web et clients HTTPS. Les requêtes HTTP internes au cluster (Superset,
+    # CLI) restent non authentifiées (allow-insecure-over-http=false par défaut : pas d'auth sur HTTP).
+    http-server.authentication.type=oauth2
+    web-ui.authentication.type=oauth2
+    http-server.authentication.oauth2.issuer={{ .Values.sso.issuer }}
+    http-server.authentication.oauth2.client-id=trino
+    http-server.authentication.oauth2.client-secret=${ENV:TRINO_OIDC_SECRET}
+    http-server.authentication.oauth2.principal-field=preferred_username
+    http-server.authentication.oauth2.scopes=openid
+    # Points d'accès explicites (pas de découverte OIDC au démarrage : Trino démarre même si Keycloak est absent)
+    http-server.authentication.oauth2.oidc.discovery=false
+    http-server.authentication.oauth2.auth-url={{ .Values.sso.issuer }}/protocol/openid-connect/auth
+    http-server.authentication.oauth2.token-url={{ .Values.sso.issuer }}/protocol/openid-connect/token
+    http-server.authentication.oauth2.jwks-url={{ .Values.sso.issuer }}/protocol/openid-connect/certs
+    http-server.authentication.oauth2.userinfo-url={{ .Values.sso.issuer }}/protocol/openid-connect/userinfo
+    {{- end }}
+  access-control.properties: |
+    access-control.name=file
+    security.config-file=/etc/trino/security/rules.json
+    security.refresh-period=60s
+  group-provider.properties: |
+    group-provider.name=file
+    file.group-file=/etc/trino/security/groups.txt
+    file.refresh-period=60s

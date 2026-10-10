@@ -26,6 +26,12 @@ declare -A GEN=(
   [SUPERSET_SECRET_KEY]="$(rand_hex 32)"
   [SUPERSET_DB_PASSWORD]="$(rand_hex 16)"
   [SUPERSET_ADMIN_PASSWORD]="$(rand_hex 8)"
+  [KEYCLOAK_ADMIN_PASSWORD]="$(rand_hex 12)"
+  [KEYCLOAK_DB_PASSWORD]="$(rand_hex 16)"
+  [KEYCLOAK_DEMO_PASSWORD]="$(rand_hex 8)"
+  [SUPERSET_OIDC_SECRET]="$(rand_hex 24)"
+  [TRINO_OIDC_SECRET]="$(rand_hex 24)"
+  [TRINO_SHARED_SECRET]="$(rand_hex 32)"
 )
 
 # Ajoute les clés présentes dans .env.example mais absentes de .env (nouveaux niveaux)
@@ -44,4 +50,5 @@ done
 chmod 600 .env
 echo "Mot de passe de l'interface NiFi (utilisateur admin) : $(grep '^NIFI_ADMIN_PASSWORD=' .env | cut -d= -f2)"
 echo "Mot de passe de l'interface Airflow (utilisateur admin) : $(grep '^AIRFLOW_ADMIN_PASSWORD=' .env | cut -d= -f2)"
-echo "Mot de passe de l'interface Superset (utilisateur admin) : $(grep '^SUPERSET_ADMIN_PASSWORD=' .env | cut -d= -f2)"
+echo "Console Keycloak (utilisateur admin) : $(grep '^KEYCLOAK_ADMIN_PASSWORD=' .env | cut -d= -f2)"
+echo "Utilisateurs de démo Keycloak (admin.groupe, analyste.ci, analyste.sn, conformite, lecteur) : $(grep '^KEYCLOAK_DEMO_PASSWORD=' .env | cut -d= -f2)"

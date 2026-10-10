@@ -1,0 +1,4 @@
+group_admin:admin.groupe
+country_analyst:analyste.ci,analyste.sn
+compliance_officer:conformite
+viewer:lecteur

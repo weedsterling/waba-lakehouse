@@ -1,0 +1,120 @@
+{
+  "catalogs": [
+    {
+      "group": "group_admin",
+      "catalog": ".*",
+      "allow": "all"
+    },
+    {
+      "user": "superset|trino|openmetadata",
+      "catalog": "lakehouse|kafka|system",
+      "allow": "read-only"
+    },
+    {
+      "group": "country_analyst",
+      "catalog": "lakehouse|system",
+      "allow": "read-only"
+    },
+    {
+      "group": "compliance_officer|viewer",
+      "catalog": "lakehouse|system",
+      "allow": "read-only"
+    },
+    {
+      "catalog": ".*",
+      "allow": "none"
+    }
+  ],
+  "schemas": [
+    {
+      "group": "group_admin",
+      "owner": true
+    },
+    {
+      "owner": false
+    }
+  ],
+  "tables": [
+    {
+      "group": "group_admin",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "DELETE",
+        "UPDATE",
+        "OWNERSHIP",
+        "GRANT_SELECT"
+      ]
+    },
+    {
+      "user": "superset|trino|openmetadata",
+      "privileges": [
+        "SELECT"
+      ]
+    },
+    {
+      "user": "analyste\\.ci",
+      "catalog": "lakehouse",
+      "schema": "gold|silver",
+      "table": "(?!fx_rates$).*",
+      "privileges": [
+        "SELECT"
+      ],
+      "filter": "country_code = 'CI'",
+      "columns": [
+        {
+          "name": "iban_masked",
+          "allow": false
+        },
+        {
+          "name": "iban_hash",
+          "allow": false
+        }
+      ]
+    },
+    {
+      "user": "analyste\\.sn",
+      "catalog": "lakehouse",
+      "schema": "gold|silver",
+      "table": "(?!fx_rates$).*",
+      "privileges": [
+        "SELECT"
+      ],
+      "filter": "country_code = 'SN'",
+      "columns": [
+        {
+          "name": "iban_masked",
+          "allow": false
+        },
+        {
+          "name": "iban_hash",
+          "allow": false
+        }
+      ]
+    },
+    {
+      "group": "country_analyst",
+      "privileges": []
+    },
+    {
+      "group": "compliance_officer",
+      "catalog": "lakehouse",
+      "schema": "gold|reporting",
+      "privileges": [
+        "SELECT"
+      ]
+    },
+    {
+      "group": "viewer",
+      "catalog": "lakehouse",
+      "schema": "gold",
+      "table": "(?!rt_).*",
+      "privileges": [
+        "SELECT"
+      ]
+    },
+    {
+      "privileges": []
+    }
+  ]
+}

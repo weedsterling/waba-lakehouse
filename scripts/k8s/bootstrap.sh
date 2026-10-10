@@ -36,8 +36,17 @@ secret processing waba-airflow "AIRFLOW_DB_PASSWORD=$AIRFLOW_DB_PASSWORD" "AIRFL
 for v in SUPERSET_SECRET_KEY SUPERSET_DB_PASSWORD SUPERSET_ADMIN_PASSWORD; do
   [[ -n "${!v:-}" && "${!v}" != change-me* ]] || { echo "$v manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
 done
+for v in KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD KEYCLOAK_DEMO_PASSWORD SUPERSET_OIDC_SECRET TRINO_OIDC_SECRET \
+         TRINO_SHARED_SECRET; do
+  [[ -n "${!v:-}" && "${!v}" != change-me* ]] || { echo "$v manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
+done
 secret serving waba-superset "SUPERSET_SECRET_KEY=$SUPERSET_SECRET_KEY" "SUPERSET_DB_PASSWORD=$SUPERSET_DB_PASSWORD" \
-  "SUPERSET_ADMIN_PASSWORD=$SUPERSET_ADMIN_PASSWORD"
+  "SUPERSET_ADMIN_PASSWORD=$SUPERSET_ADMIN_PASSWORD" "SUPERSET_OIDC_SECRET=$SUPERSET_OIDC_SECRET"
+# Keycloak : noms de variables lus par Keycloak (KC_*) et par le realm importé (${...} de waba-realm.json)
+secret governance waba-keycloak "KC_BOOTSTRAP_ADMIN_PASSWORD=$KEYCLOAK_ADMIN_PASSWORD" \
+  "KC_DB_PASSWORD=$KEYCLOAK_DB_PASSWORD" "KEYCLOAK_DEMO_PASSWORD=$KEYCLOAK_DEMO_PASSWORD" \
+  "SUPERSET_OIDC_SECRET=$SUPERSET_OIDC_SECRET" "TRINO_OIDC_SECRET=$TRINO_OIDC_SECRET"
+secret serving waba-trino "TRINO_SHARED_SECRET=$TRINO_SHARED_SECRET" "TRINO_OIDC_SECRET=$TRINO_OIDC_SECRET"
 secret ingestion waba-nifi "NIFI_ADMIN_USER=${NIFI_ADMIN_USER:-admin}" "NIFI_ADMIN_PASSWORD=$NIFI_ADMIN_PASSWORD" \
   "NIFI_SENSITIVE_PROPS_KEY=$NIFI_SENSITIVE_PROPS_KEY"
 
@@ -57,11 +66,15 @@ configmap processing waba-airflow-dags --from-file=airflow/dags/
 configmap processing waba-airflow-lib --from-file=airflow/dags/waba/
 # Superset : configuration + tableaux de bord as code (importés par le Job d'init à chaque déploiement)
 configmap serving superset-config --from-file=superset_config.py=superset/superset_config.py
-configmap serving superset-dashboards --from-file=waba_dashboards.py=superset/dashboards/waba_dashboards.py
+configmap serving superset-dashboards --from-file=superset/dashboards/   # tableaux de bord + sécurité as code
+# Sécurité : realm Keycloak et règles d'accès Trino (versionnés, sans secret)
+configmap governance keycloak-realm --from-file=waba-realm.json=keycloak/waba-realm.json
+configmap governance keycloak-sync --from-file=sync_realm.py=keycloak/sync_realm.py
+configmap serving trino-security --from-file=trino/security/
 
 # Noms d'hôtes des interfaces (Ingress) -> IP du cluster, dans /etc/hosts de la VM
 ip=$(minikube ip)
-hosts="minio.waba.local generator.waba.local nifi.waba.local airflow.waba.local superset.waba.local keycloak.waba.local openmetadata.waba.local grafana.waba.local"
+hosts="minio.waba.local generator.waba.local nifi.waba.local airflow.waba.local superset.waba.local keycloak.waba.local trino.waba.local openmetadata.waba.local grafana.waba.local"
 if ! grep -q "^$ip $hosts\$" /etc/hosts; then
   sudo sed -i '/waba\.local/d' /etc/hosts
   echo "$ip $hosts" | sudo tee -a /etc/hosts >/dev/null

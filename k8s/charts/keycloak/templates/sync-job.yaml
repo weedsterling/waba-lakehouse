@@ -1,0 +1,41 @@
+# Realm « as code » : après chaque installation / mise à jour, le realm existant est aligné sur
+# keycloak/waba-realm.json (clients, rôles, utilisateurs en écrasement) — --import-realm ne joue qu'au
+# premier démarrage. Script stdlib (keycloak/sync_realm.py), ConfigMaps créées par bootstrap.sh.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-realm-sync
+  labels: { app.kubernetes.io/name: keycloak-realm-sync, app.kubernetes.io/part-of: waba }
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: keycloak-realm-sync, app.kubernetes.io/part-of: waba }
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: sync
+          image: {{ .Values.syncImage }}
+          command: ["python", "-u", "/sync/sync_realm.py", "/realm/waba-realm.json"]
+          envFrom:
+            - secretRef: { name: waba-keycloak }
+          env:
+            - { name: KEYCLOAK_URL, value: "http://keycloak:8080" }
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: realm, mountPath: /realm, readOnly: true }
+            - { name: sync, mountPath: /sync, readOnly: true }
+      volumes:
+        - name: realm
+          configMap: { name: keycloak-realm }
+        - name: sync
+          configMap: { name: keycloak-sync }

@@ -287,7 +287,7 @@ docker compose stop                # libère la mémoire : la stack Compose rest
 | `ingestion` | MinIO (StatefulSet + PVC, Job d'initialisation), Kafka KRaft (opérateur Strimzi, topics `KafkaTopic`), NiFi (StatefulSet, flux provisionné par Job), générateur |
 | `processing` | Catalogue Iceberg REST adossé à PostgreSQL (StatefulSet + PVC), Spark Operator (kubeflow) : flux `stream-raw-silver` / `stream-silver-gold` en `SparkApplication` (`restartPolicy: Always`) ; Airflow 3 (api-server, scheduler LocalExecutor en StatefulSet, dag-processor, triggerer, PostgreSQL) : chaque tâche Spark des DAGs devient une `SparkApplication` (`waba/spark_k8s.py`, modèle unique rendu par le chart `spark-jobs`) |
 | `serving` | Trino (catalogues Iceberg + Kafka), Superset 6.1 (3 tableaux de bord importés depuis le dépôt, PostgreSQL) |
-| `governance` | Keycloak, OpenMetadata |
+| `governance` | Keycloak 26 (realm `waba` as code, SSO de Superset et de Trino), OpenMetadata |
 | `monitoring` | Prometheus, Grafana, Loki |
 
 Secrets Kubernetes créés par `scripts/k8s/bootstrap.sh` depuis `.env` (rien dans les manifestes),
@@ -304,8 +304,16 @@ Après modification d'un DAG : `./scripts/k8s/bootstrap.sh && helmfile -f k8s/he
 (ConfigMaps mises à jour, scheduler et dag-processor redémarrés automatiquement par empreinte).
 CLI : `./scripts/k8s/airflow.sh dags list`.
 
+**Sécurité (9.6a)** — connexion à Superset et à https://trino.waba.local par Keycloak (http://keycloak.waba.local).
+Utilisateurs de démo `admin.groupe`, `analyste.ci`, `analyste.sn`, `conformite`, `lecteur` (mot de passe
+`KEYCLOAK_DEMO_PASSWORD` de `.env`). Rôles Keycloak -> rôles Superset recalculés à chaque connexion
+(`superset/dashboards/waba_security.py`) : RLS par pays pour `country_analyst`, tableau de bord réglementaire
+seul pour `compliance_officer`, agrégats sans SQL Lab ni export pour `viewer`. Trino : règles d'accès par
+fichier (`trino/security/`), filtre de lignes par pays et colonnes IBAN refusées pour les analystes, Silver
+interdit au `viewer`. Détails : `keycloak/README.md`, `trino/security/README.md`.
+
 **Superset** — http://superset.waba.local (admin / `SUPERSET_ADMIN_PASSWORD` de `.env`). Tableaux de bord
-*as code* (`superset/dashboards/waba_dashboards.py`) : 10 jeux de données SQL Trino, 15 graphiques, 3 tableaux
+*as code* (`superset/dashboards/waba_dashboards.py`, importés par `waba_provision.py`) : 10 jeux de données SQL Trino, 15 graphiques, 3 tableaux
 de bord (Performance commerciale, Risque & conformité BCEAO/CIMA, Mobile Money & transferts), filtre « Pays »
 natif. Importés à chaque `helmfile sync` (UUID déterministes : mise à jour sans doublon, Git fait foi).
 Contrôle des requêtes dans Trino : `python3 superset/dashboards/waba_dashboards.py --check-sql | ./scripts/k8s/trino.sh`.

@@ -1,0 +1,52 @@
+# Base Keycloak (realms, utilisateurs, sessions persistantes).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak-postgres
+  labels: { app.kubernetes.io/name: keycloak-postgres, app.kubernetes.io/part-of: waba }
+spec:
+  serviceName: keycloak-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: keycloak-postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: keycloak-postgres, app.kubernetes.io/part-of: waba }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: {{ .Values.db.image }}
+          env:
+            - { name: POSTGRES_DB, value: keycloak }
+            - { name: POSTGRES_USER, value: keycloak }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: waba-keycloak, key: KC_DB_PASSWORD } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: pg, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "keycloak", "-d", "keycloak"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "keycloak", "-d", "keycloak"] }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.db.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: {{ .Values.db.storage }} } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-postgres
+spec:
+  selector: { app.kubernetes.io/name: keycloak-postgres }
+  ports:
+    - { name: pg, port: 5432, targetPort: pg }

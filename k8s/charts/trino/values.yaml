@@ -6,3 +6,9 @@ region: us-east-1
 resources:
   requests: { cpu: 500m, memory: 2Gi }
   limits: { memory: 3Gi }            # la JVM dimensionne son tas sur cette limite (MaxRAMPercentage)
+host: trino.waba.local
+# SSO Keycloak (OAuth2) pour l'interface web et les clients HTTPS (Ingress TLS) ; false = Trino sans
+# authentification (comportement des étapes précédentes), le contrôle d'accès par fichier restant actif.
+sso:
+  enabled: true
+  issuer: http://keycloak.waba.local/realms/waba

@@ -1,0 +1,89 @@
+# Keycloak en mode production (`start`) derrière l'Ingress NGINX (HTTP, en-têtes X-Forwarded).
+# Realm `waba` importé au premier démarrage depuis le ConfigMap keycloak-realm (keycloak/waba-realm.json),
+# ses ${VARIABLES} (secrets OIDC, mot de passe de démo) étant lues dans l'environnement (Secret waba-keycloak).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels: { app.kubernetes.io/name: keycloak, app.kubernetes.io/part-of: waba }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: keycloak }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: keycloak, app.kubernetes.io/part-of: waba }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-for-db
+          image: {{ .Values.db.image }}
+          command: ["sh", "-c", "until pg_isready -h keycloak-postgres -U keycloak; do sleep 3; done"]
+      containers:
+        - name: keycloak
+          image: {{ .Values.image }}
+          args: ["start", "--import-realm"]
+          envFrom:
+            - secretRef: { name: waba-keycloak }    # KC_BOOTSTRAP_ADMIN_PASSWORD, KC_DB_PASSWORD, secrets OIDC…
+          env:
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
+            - { name: KC_DB, value: postgres }
+            - { name: KC_DB_URL, value: "jdbc:postgresql://keycloak-postgres:5432/keycloak" }
+            - { name: KC_DB_USERNAME, value: keycloak }
+            - { name: KC_HOSTNAME, value: "http://{{ .Values.host }}" }   # même URL pour navigateur et pods
+            - { name: KC_HTTP_ENABLED, value: "true" }                    # TLS terminé à l'Ingress
+            - { name: KC_PROXY_HEADERS, value: xforwarded }
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+            - { name: KC_CACHE, value: local }                            # 1 réplique : pas de cluster Infinispan
+            - { name: JAVA_OPTS_KC_HEAP, value: "-XX:MaxRAMPercentage=65" }
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: management, containerPort: 9000 }
+          startupProbe:                     # premier démarrage : optimisation Quarkus + import du realm
+            httpGet: { path: /health/started, port: management }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /health/ready, port: management }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health/live, port: management }
+            periodSeconds: 20
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - { name: realm, mountPath: /opt/keycloak/data/import, readOnly: true }
+      volumes:
+        - name: realm
+          configMap: { name: keycloak-realm }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  selector: { app.kubernetes.io/name: keycloak }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"   # en-têtes / cookies OIDC volumineux
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port: { name: http }

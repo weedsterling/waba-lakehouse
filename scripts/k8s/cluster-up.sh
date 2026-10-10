@@ -75,6 +75,24 @@ kubectl -n ingress-nginx wait --for=condition=ready pod \
   -l app.kubernetes.io/component=controller --timeout=600s
 echo "✔ contrôleur Ingress prêt"
 
+# Noms *.waba.local résolus DANS le cluster vers l'Ingress (réécriture CoreDNS) : le navigateur et les pods
+# utilisent la même URL Keycloak (http://keycloak.waba.local), donc le même « issuer » dans les jetons OIDC.
+corefile=$(kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}')
+if ! grep -q 'waba\\.local' <<<"$corefile"; then
+  python3 - "$corefile" > /tmp/waba-coredns.json <<'PY2'
+import json, sys
+rule = "    rewrite name regex (.+)\\.waba\\.local\\.$ ingress-nginx-controller.ingress-nginx.svc.cluster.local. answer auto"
+lines = sys.argv[1].splitlines()
+i = next(n for n, l in enumerate(lines) if l.strip().startswith(".:53"))
+lines.insert(i + 1, rule)
+print(json.dumps({"data": {"Corefile": "\n".join(lines) + "\n"}}))
+PY2
+  kubectl -n kube-system patch configmap coredns --type merge -p "$(cat /tmp/waba-coredns.json)" >/dev/null
+  kubectl -n kube-system rollout restart deployment coredns >/dev/null
+  kubectl -n kube-system rollout status deployment coredns --timeout=120s >/dev/null
+  echo "✔ CoreDNS : *.waba.local -> Ingress"
+fi
+
 # Images construites par Docker Compose aux Levels 1-3, copiées dans le cluster (pas de registre).
 # Liste complétée à chaque étape du Level 4 (9.3 : Spark/Airflow, 9.2 : générateur).
 IMAGES=(${WABA_IMAGES:-})

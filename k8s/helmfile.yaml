@@ -60,7 +60,7 @@ releases:
   - name: trino
     namespace: serving
     chart: ./charts/trino
-    needs: [processing/iceberg-rest, ingestion/kafka]
+    needs: [processing/iceberg-rest, ingestion/kafka, governance/keycloak]
 
   # ------------------------------------------------------------ 9.3 : traitements Spark sur Kubernetes
   - name: spark-operator
@@ -93,5 +93,11 @@ releases:
   - name: superset
     namespace: serving
     chart: ./charts/superset
-    needs: [serving/trino]
+    needs: [serving/trino, governance/keycloak]
     timeout: 1200                     # migration du schéma + import des tableaux de bord
+
+  # ------------------------------------------------------------ 9.6 : gouvernance & sécurité
+  - name: keycloak
+    namespace: governance
+    chart: ./charts/keycloak
+    timeout: 900                      # premier démarrage : optimisation Quarkus + import du realm

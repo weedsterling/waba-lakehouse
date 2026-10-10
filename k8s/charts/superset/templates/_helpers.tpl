@@ -4,6 +4,9 @@
   valueFrom: { secretKeyRef: { name: waba-superset, key: SUPERSET_SECRET_KEY } }
 - name: SUPERSET_DB_PASSWORD
   valueFrom: { secretKeyRef: { name: waba-superset, key: SUPERSET_DB_PASSWORD } }
+- { name: KEYCLOAK_URL, value: {{ .Values.keycloakUrl | quote }} }
+- name: SUPERSET_OIDC_SECRET
+  valueFrom: { secretKeyRef: { name: waba-superset, key: SUPERSET_OIDC_SECRET } }
 {{- end }}
 
 {{- define "superset.volumes" -}}

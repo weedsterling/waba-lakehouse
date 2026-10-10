@@ -1,9 +1,11 @@
 # Image officielle + pilotes Trino/PostgreSQL (superset/Dockerfile), construite et chargée par deploy.sh
-image: waba/superset:6.1.0
+image: waba/superset:6.1.0-sso
 host: superset.waba.local
 # Connexion Trino (SQLAlchemy) : utilisateur technique « superset », sans mot de passe tant que Trino
 # n'a pas d'authentification (SSO Keycloak à l'étape 9.6)
 trinoUri: trino://superset@trino.serving.svc.cluster.local:8080/lakehouse
+# SSO : Keycloak joint sous le MÊME nom par le navigateur et par le pod (réécriture CoreDNS, cluster-up.sh)
+keycloakUrl: http://keycloak.waba.local
 
 web:
   workers: 2                  # processus gunicorn (gthread)

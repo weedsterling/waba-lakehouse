@@ -1,0 +1,12 @@
+image: quay.io/keycloak/keycloak:26.0.7
+host: keycloak.waba.local
+resources:
+  requests: { cpu: 200m, memory: 512Mi }
+  limits: { memory: 1Gi }               # tas JVM = 65 % de la limite (JAVA_OPTS_KC_HEAP)
+db:
+  image: postgres:16-alpine
+  storage: 1Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+syncImage: python:3.12-slim             # Job de synchronisation du realm (stdlib uniquement)

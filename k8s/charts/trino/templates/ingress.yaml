@@ -1,0 +1,23 @@
+# Interface web Trino en HTTPS (certificat par défaut de l'Ingress NGINX, autosigné) : OAuth2 exige une
+# connexion sécurisée ; Trino reçoit X-Forwarded-Proto=https (http-server.process-forwarded=true).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: trino
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [{{ .Values.host }}]
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: trino
+                port: { name: http }

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: keycloak
+description: "WABA — Keycloak 26 (SSO OIDC) : realm waba importé depuis le dépôt, base PostgreSQL"
+type: application
+version: 0.2.0
+appVersion: "26.0.7"

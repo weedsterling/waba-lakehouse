@@ -292,13 +292,13 @@ class Chart:
 
 
 def bar(name, dataset, x, metrics, groupby=(), stack=False, horizontal=False, filters=(), y_format="SMART_NUMBER",
-        sort_by_metric=False, sort_asc=False, **kw) -> Chart:
+        sort_by_metric=False, sort_asc=False, row_limit=10000, **kw) -> Chart:
     p = {**BAR_DEFAULTS, "viz_type": "echarts_timeseries_bar", "x_axis": x, "xAxisForceCategorical": True,
          "metrics": list(metrics), "groupby": list(groupby), "adhoc_filters": list(filters),
          "orientation": "horizontal" if horizontal else "vertical", "y_axis_format": y_format,
-         "stack": "Stack" if stack else None, "show_value": False}
+         "stack": "Stack" if stack else None, "show_value": False, "row_limit": row_limit}
     if sort_by_metric:
-        # barres horizontales : la première catégorie est en bas -> tri croissant = plus gros en haut
+        # sort_asc=False sur des barres horizontales : plus gros montant en haut (vérifié au rendu)
         p.update({"x_axis_sort": metrics[0]["label"], "x_axis_sort_asc": sort_asc})
     else:
         p.update({"x_axis_sort_asc": True})
@@ -392,8 +392,7 @@ CHARTS = [
            "left_margin": "auto", "bottom_margin": "auto", "extra_form_data": {}},
           description="Nombre de paiements par heure (UTC = heure d'Abidjan / Dakar / Accra).", width=12, height=60),
     bar("Top 5 des corridors transfrontaliers (montant)", "ds_corridors", "corridor", [CORRIDOR_AMOUNT],
-        filters=[sql_filter("corridor_rank <= 5")], horizontal=True, y_format=",.0f", sort_by_metric=True,
-        sort_asc=True,
+        horizontal=True, y_format=",.0f", sort_by_metric=True, sort_asc=False, row_limit=5,
         width=6, description="Montant cumulé des transferts réussis par corridor émetteur → bénéficiaire."),
     bar("Taux d'échec mobile money par opérateur et par pays", "ds_mobile_money_echecs", "country_code",
         [FAILURE_PCT], groupby=["operator"], y_format=",.2f", width=6),
