@@ -27,6 +27,8 @@ spec:
           env:
             - { name: discovery.type, value: single-node }
             - { name: xpack.security.enabled, value: "false" }   # interne au cluster (Service ClusterIP)
+            # Mono-nœud de démo : pas de passage des index en lecture seule si le disque du nœud dépasse 85-95 %
+            - { name: cluster.routing.allocation.disk.threshold_enabled, value: "false" }
             - { name: ES_JAVA_OPTS, value: {{ .Values.search.heap | quote }} }
           ports:
             - { name: http, containerPort: 9200 }

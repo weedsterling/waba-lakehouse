@@ -59,3 +59,10 @@ def test_trino_client_protocol_stays_usable_over_http():
     active = [line.strip() for line in cfg.splitlines() if not line.strip().startswith("#")]
     assert not any(line.startswith("http-server.authentication.type") for line in active)
     assert "web-ui.authentication.type=oauth2" in active
+
+
+def test_openmetadata_search_engine_matches_server_client():
+    """Régression : OM 1.12 (client Elasticsearch 9) face à ES 8.11 -> « media_type_header_exception »."""
+    values = yaml.safe_load((ROOT / "charts/openmetadata/values.yaml").read_text())
+    assert values["image"].startswith("openmetadata/server:1.12.")
+    assert values["search"]["image"].rsplit(":", 1)[1].startswith("9.")

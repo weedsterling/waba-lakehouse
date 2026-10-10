@@ -9,12 +9,14 @@ server:
     requests: { cpu: 200m, memory: 1280Mi }
     limits: { memory: 1792Mi }
 search:
-  image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4   # version de la stack Docker officielle OM
-  heap: "-Xms512m -Xmx512m"
+  # OM 1.12 embarque le client Elasticsearch 9 : un serveur 8.x rejette ses en-têtes
+  # (« media_type_header_exception ») -> même version que la stack Docker officielle OM 1.12.14.
+  image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0
+  heap: "-Xms768m -Xmx768m"
   storage: 3Gi
   resources:
-    requests: { cpu: 100m, memory: 1Gi }
-    limits: { memory: 1280Mi }
+    requests: { cpu: 100m, memory: 1280Mi }
+    limits: { memory: 1536Mi }
 db:
   image: postgres:16-alpine
   storage: 2Gi
