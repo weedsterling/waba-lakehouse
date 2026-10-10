@@ -314,7 +314,7 @@
           "error": true,
           "normal": true
         },
-        "alertInstanceLabelFilter": "",
+        "alertInstanceLabelFilter": "{domaine=~\"fraude|aml|reglementaire\"}",
         "showInstances": false,
         "folder": null
       }
@@ -426,7 +426,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (namespace) (container_memory_working_set_bytes{namespace=~\"ingestion|processing|serving|governance|monitoring\", container!=\"\"})",
+          "expr": "sum by (namespace) (container_memory_working_set_bytes{job=\"kubelet\", namespace=~\"ingestion|processing|serving|governance|monitoring\", container=\"\", pod!=\"\"})",
           "legendFormat": "{{namespace}}",
           "instant": false,
           "range": true
@@ -532,7 +532,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{namespace=~\"ingestion|processing|serving|governance|monitoring\", level=~\"ERROR|WARNING\"}"
+          "expr": "{namespace=~\"ingestion|processing|serving|governance|monitoring\"} |~ `(?i)(\\berror\\b|\\bwarn(ing)?\\b|exception|traceback)`"
         }
       ],
       "options": {

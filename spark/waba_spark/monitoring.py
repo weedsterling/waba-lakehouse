@@ -33,12 +33,20 @@ def group_id(query_name: str) -> str:
 def kafka_offsets(sources: Iterable) -> dict[str, dict[int, int]]:
     """Offsets traités (endOffset) des sources Kafka d'une progression : {topic: {partition: offset}}.
 
-    endOffset Kafka = prochain offset à lire, soit exactement la sémantique d'un offset committé."""
+    Une source Kafka se reconnaît à la forme de son endOffset ({"topic": {"0": 42}}), pas à sa description
+    (libellé interne de Spark, susceptible de changer). endOffset Kafka = prochain offset à lire, soit
+    exactement la sémantique d'un offset committé."""
     offsets: dict[str, dict[int, int]] = {}
     for s in sources:
-        if not str(getattr(s, "description", "")).startswith("KafkaV2") or not getattr(s, "endOffset", None):
+        end = getattr(s, "endOffset", None)
+        try:
+            end = json.loads(end) if isinstance(end, str) else end
+        except ValueError:
             continue
-        end = json.loads(s.endOffset) if isinstance(s.endOffset, str) else s.endOffset
+        if not isinstance(end, dict) or not end:
+            continue
+        if not all(isinstance(parts, dict) and all(str(p).isdigit() for p in parts) for parts in end.values()):
+            continue
         for topic, parts in end.items():
             offsets.setdefault(topic, {}).update({int(p): int(o) for p, o in parts.items()})
     return offsets
@@ -51,6 +59,7 @@ class KafkaOffsetCommitter(StreamingQueryListener):
         self._jvm, self._bootstrap, self._timeout = spark._jvm, bootstrap, timeout_s
         self._admin = None
         self._last_error = 0.0
+        self._published: set[str] = set()       # groupes déjà publiés (journal au premier succès)
 
     def _client(self):
         if self._admin is None:
@@ -74,18 +83,29 @@ class KafkaOffsetCommitter(StreamingQueryListener):
         pass
 
     def onQueryProgress(self, event) -> None:  # noqa: N802
-        progress = event.progress
-        offsets = kafka_offsets(progress.sources)
-        if not progress.name or not offsets:
-            return
-        try:
-            self.commit(group_id(progress.name), offsets)
-        except Exception as exc:  # noqa: BLE001 - la supervision ne doit jamais casser le flux
+        group = None
+        try:                                    # la supervision ne doit jamais casser le flux
+            progress = event.progress
+            offsets = kafka_offsets(progress.sources)
+            if not progress.name or not offsets:
+                if progress.name and progress.name not in self._published:   # diagnostic, une fois par requête
+                    self._published.add(progress.name)
+                    log.info("aucune source Kafka dans la progression", extra={"ctx": {
+                        "event": "offset_commit_skipped", "query": progress.name,
+                        "sources": [str(getattr(x, "description", ""))[:120] for x in progress.sources]}})
+                return
+            group = group_id(progress.name)
+            self.commit(group, offsets)
+            if group not in self._published:
+                self._published.add(group)
+                log.info("offsets publiés dans Kafka", extra={"ctx": {
+                    "event": "offset_commit_ok", "group": group, "topics": sorted(offsets)}})
+        except Exception as exc:  # noqa: BLE001
             self._admin = None                                  # client recréé au prochain micro-lot
             if time.monotonic() - self._last_error > 60:        # au plus un message par minute
                 self._last_error = time.monotonic()
                 log.warning("publication des offsets impossible", extra={"ctx": {
-                    "event": "offset_commit_failed", "group": group_id(progress.name), "error": str(exc)[:300]}})
+                    "event": "offset_commit_failed", "group": group, "error": str(exc)[:300]}})
 
     def onQueryIdle(self, event) -> None:  # noqa: N802
         pass
@@ -98,4 +118,6 @@ def install(spark, bootstrap: str) -> KafkaOffsetCommitter:
     """À appeler une fois par application, avant le démarrage des requêtes."""
     listener = KafkaOffsetCommitter(spark, bootstrap)
     spark.streams.addListener(listener)
+    log.info("publication des offsets activée", extra={"ctx": {"event": "offset_committer_installed",
+                                                               "group_prefix": GROUP_PREFIX}})
     return listener

@@ -126,5 +126,6 @@ def test_offset_committer_reads_kafka_sources_only():
 
     sources = [Src("KafkaV2[Subscribe[silver-bank-transactions, silver-mobile-money]]",
                    '{"silver-bank-transactions":{"0":120,"1":80},"silver-mobile-money":{"0":7}}'),
-               Src("RateStreamV2[rowsPerSecond=5]", "3"), Src("KafkaV2[Subscribe[x]]", None)]
+               Src("RateStreamV2[rowsPerSecond=5]", "3"), Src("KafkaV2[Subscribe[x]]", None),
+               Src("FileStreamSource[s3a://x]", '{"logOffset": 4}'), Src("Kafka?", "pas du json")]
     assert kafka_offsets(sources) == {"silver-bank-transactions": {0: 120, 1: 80}, "silver-mobile-money": {0: 7}}

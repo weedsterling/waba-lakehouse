@@ -70,7 +70,8 @@ PANELS = [
     panel(5, "alertlist", "Alertes WABA", (0, 5, 8, 9), [], None,
           options={"viewMode": "list", "groupMode": "default", "maxItems": 10, "sortOrder": 1,
                    "stateFilter": {"firing": True, "pending": True, "noData": True, "error": True, "normal": True},
-                   "alertInstanceLabelFilter": "", "showInstances": False, "folder": None}),
+                   "alertInstanceLabelFilter": '{domaine=~"fraude|aml|reglementaire"}', "showInstances": False,
+                   "folder": None}),
     panel(6, "timeseries", "Lag par groupe de consommateurs Spark", (8, 5, 16, 9),
           [prom('sum by (consumergroup) (kafka_consumergroup_lag{consumergroup=~"waba-spark-.*"})',
                 "{{consumergroup}}")], PROM,
@@ -80,7 +81,10 @@ PANELS = [
           [prom('sum by (topic) (rate(kafka_topic_partition_current_offset{topic=~"(raw|silver|gold|dlq)-.*"}[5m]))',
                 "{{topic}}")], PROM, fieldConfig={"defaults": {"unit": "short"}, "overrides": []}),
     panel(8, "timeseries", "Mémoire par domaine (namespace)", (12, 14, 12, 8),
-          [prom(f'sum by (namespace) (container_memory_working_set_bytes{{namespace=~"{NAMESPACES}", container!=""}})',
+          # Série au niveau pod (container="") : toujours présente dans cAdvisor, y compris sur Minikube (driver
+          # Docker) où les séries par conteneur sont absentes ; pas de double comptage pod + conteneurs.
+          [prom(f'sum by (namespace) (container_memory_working_set_bytes{{job="kubelet", namespace=~"{NAMESPACES}", '
+                'container="", pod!=""})',
                 "{{namespace}}")], PROM,
           fieldConfig={"defaults": {"unit": "bytes", "custom": {"stacking": {"mode": "normal"}, "fillOpacity": 30}},
                        "overrides": []}),
@@ -91,7 +95,10 @@ PANELS = [
               {"id": "mappings", "value": [{"type": "value", "options": {
                   "success": {"color": "green"}, "failed": {"color": "red"}, "running": {"color": "blue"}}}]}]}]}),
     panel(10, "logs", "Journaux en erreur / avertissement (Loki)", (12, 22, 12, 9),
-          [{"refId": "A", "datasource": LOKI, "expr": f'{{namespace=~"{NAMESPACES}", level=~"ERROR|WARNING"}}'}],
+          # Filtre sur le texte (et pas sur le label level) : couvre aussi les journaux non JSON (log4j Spark,
+          # Java, Python) dont le niveau n'est pas extrait par Alloy.
+          [{"refId": "A", "datasource": LOKI,
+            "expr": f'{{namespace=~"{NAMESPACES}"}} |~ `(?i)(\\berror\\b|\\bwarn(ing)?\\b|exception|traceback)`'}],
           LOKI, options={"showTime": True, "wrapLogMessage": True, "sortOrder": "Descending",
                          "enableLogDetails": True}),
 ]

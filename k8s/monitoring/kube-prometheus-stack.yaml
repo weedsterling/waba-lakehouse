@@ -28,6 +28,10 @@ defaultRules:
     kubeSchedulerAlerting: false
     kubeSchedulerRecording: false
     windows: false
+  disabled:                     # alertes conçues pour Alertmanager (absent ici) : toujours actives, sans objet
+    PrometheusNotConnectedToAlertmanagers: true
+    Watchdog: true
+    InfoInhibitor: true
 
 prometheusOperator:
   admissionWebhooks: { enabled: false }   # pas de Job de certificats ni de webhook (cluster de démonstration)
