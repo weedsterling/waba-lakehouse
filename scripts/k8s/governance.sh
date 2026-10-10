@@ -5,7 +5,7 @@
 #   ./scripts/k8s/governance.sh catalog   lance le catalogue as code maintenant (découverte, docs, PII, lineage)
 #   ./scripts/k8s/governance.sh down      arrête OpenMetadata (données conservées sur les volumes)
 #   ./scripts/k8s/governance.sh reset-search  vide l'index Elasticsearch (données dérivées, reconstruites depuis
-#                                         PostgreSQL) : changement de version majeure d'ES, index corrompu
+#                                         PostgreSQL) : index corrompu (changement de version majeure : automatique)
 # NB : deploy.sh / helmfile sync remettent OpenMetadata à l'arrêt (replicas 0 dans le chart).
 # =============================================================================
 set -euo pipefail
@@ -42,7 +42,7 @@ case "${1:-}" in
     kubectl -n $NS scale deployment openmetadata --replicas=0
     kubectl -n $NS scale statefulset openmetadata-search --replicas=0
     kubectl -n $NS wait --for=delete pod/openmetadata-search-0 --timeout=120s 2>/dev/null || true
-    kubectl -n $NS delete pvc data-openmetadata-search-0 --ignore-not-found
+    kubectl -n $NS delete pvc data-openmetadata-search-0 --ignore-not-found --wait=true --timeout=120s
     echo "✔ index Elasticsearch supprimé : relancer $0 up (OpenMetadata recrée les index au démarrage)" ;;
   *) sed -n '3,9p' "$0"; exit 2 ;;
 esac

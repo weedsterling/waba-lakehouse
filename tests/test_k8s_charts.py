@@ -66,3 +66,9 @@ def test_openmetadata_search_engine_matches_server_client():
     values = yaml.safe_load((ROOT / "charts/openmetadata/values.yaml").read_text())
     assert values["image"].startswith("openmetadata/server:1.12.")
     assert values["search"]["image"].rsplit(":", 1)[1].startswith("9.")
+
+
+def test_openmetadata_search_data_is_isolated_per_major_version():
+    """Régression : ES 9 refusait de démarrer sur les données laissées par ES 8.11 dans le même volume."""
+    tpl = (ROOT / "charts/openmetadata/templates/search.yaml").read_text()
+    assert "subPath: es-{{ $esMajor }}" in tpl and "chown 1000:0 /data/es-{{ $esMajor }}" in tpl

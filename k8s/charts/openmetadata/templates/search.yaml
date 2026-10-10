@@ -1,4 +1,8 @@
 # Moteur de recherche OpenMetadata (Elasticsearch mono-nœud, interne au namespace, sans exposition).
+# Données dans un sous-répertoire par version majeure (es-9/…) : Elasticsearch refuse de démarrer sur les données
+# d'une version majeure antérieure (« cannot upgrade a node from 8.11.4 directly to 9.3.0 »). L'index étant dérivé
+# de PostgreSQL, un changement de version majeure repart d'un index vide, sans manipulation du volume.
+{{- $esMajor := .Values.search.image | splitList ":" | last | splitList "." | first }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -21,6 +25,12 @@ spec:
           image: busybox:1.36
           command: ["sh", "-c", "sysctl -w vm.max_map_count=262144 || true"]
           securityContext: { privileged: true, runAsUser: 0 }
+        - name: data-dir                    # sous-répertoire de la version, propriétaire = utilisateur elasticsearch
+          image: busybox:1.36
+          command: ["sh", "-c", "mkdir -p /data/es-{{ $esMajor }} && chown 1000:0 /data/es-{{ $esMajor }}"]
+          securityContext: { runAsUser: 0 }
+          volumeMounts:
+            - { name: data, mountPath: /data }
       containers:
         - name: elasticsearch
           image: {{ .Values.search.image }}
@@ -43,7 +53,7 @@ spec:
           resources:
             {{- toYaml .Values.search.resources | nindent 12 }}
           volumeMounts:
-            - { name: data, mountPath: /usr/share/elasticsearch/data }
+            - { name: data, mountPath: /usr/share/elasticsearch/data, subPath: es-{{ $esMajor }} }
   volumeClaimTemplates:
     - metadata: { name: data }
       spec:
