@@ -16,3 +16,7 @@ topics:
   - { name: gold-aml-events, retentionMs: "2592000000" }
   - { name: gold-liquidity-alerts, retentionMs: "2592000000" }
   - { name: dlq-financial-events, retentionMs: "2592000000" }
+# Supervision (9.7) : groupes et topics exposés par le Kafka Exporter
+exporter:
+  groupRegex: "waba-.*"
+  topicRegex: "(raw|silver|gold|dlq)-.*"

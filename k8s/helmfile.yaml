@@ -11,6 +11,12 @@ repositories:
     url: https://strimzi.io/charts/
   - name: spark-operator
     url: https://kubeflow.github.io/spark-operator
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: grafana-community
+    url: https://grafana-community.github.io/helm-charts
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
 
 helmDefaults:
   wait: true
@@ -107,3 +113,30 @@ releases:
     chart: ./charts/openmetadata
     needs: [serving/trino]
     timeout: 900                      # installé arrêté (replicas 0) : scripts/k8s/governance.sh up
+
+  # ------------------------------------------------------------ 9.7 : observabilité
+  - name: kube-prometheus-stack
+    namespace: monitoring
+    chart: prometheus-community/kube-prometheus-stack
+    version: 91.5.3                   # Prometheus Operator 0.94, Grafana 13, kube-state-metrics 8.5
+    values: [monitoring/kube-prometheus-stack.yaml]
+    timeout: 900
+
+  - name: loki
+    namespace: monitoring
+    chart: grafana-community/loki
+    version: 18.13.4                  # Loki 3.7 monolithique (chart communautaire, successeur de grafana/loki)
+    values: [monitoring/loki.yaml]
+
+  - name: alloy
+    namespace: monitoring
+    chart: grafana/alloy
+    version: 1.12.1                   # Alloy 1.19 : collecte des journaux des pods -> Loki
+    values: [monitoring/alloy.yaml]
+    needs: [monitoring/loki]
+
+  - name: observability
+    namespace: monitoring
+    chart: ./charts/observability     # alertes Grafana as code, tableau de bord, PodMonitor Kafka Exporter
+    needs: [monitoring/kube-prometheus-stack, ingestion/kafka]
+

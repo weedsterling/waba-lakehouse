@@ -57,8 +57,15 @@ else
 fi
 
 # Contrôle bloquant : le cluster doit pouvoir télécharger des images
-if ! minikube ssh -- "nslookup ghcr.io >/dev/null 2>&1 && nslookup registry.k8s.io >/dev/null 2>&1"; then
-  echo "✘ le nœud Minikube ne résout pas les registres d'images (DNS) : voir scripts/k8s/docker-dns.sh" >&2
+# (6 essais : une coupure réseau passagère de la VM ne doit pas interrompre un déploiement)
+dns_ok() { minikube ssh -- "nslookup ghcr.io >/dev/null 2>&1 && nslookup registry.k8s.io >/dev/null 2>&1" 2>/dev/null; }
+for try in 1 2 3 4 5 6; do dns_ok && break; echo "DNS du nœud indisponible (essai $try/6)…"; sleep 10; done
+if ! dns_ok; then
+  echo "✘ le nœud Minikube ne résout pas les registres d'images (DNS). Diagnostic :" >&2
+  if getent hosts ghcr.io >/dev/null; then echo "  VM : résolution OK" >&2; else echo "  VM : résolution KO -> réseau de la VM coupé (NAT VMware, VPN ?)" >&2; fi
+  docker run --rm --dns 1.1.1.1 busybox:1.36 nslookup ghcr.io >/dev/null 2>&1 \
+    && echo "  conteneur -> 1.1.1.1 : OK (DNS Docker à revoir : scripts/k8s/docker-dns.sh)" >&2 \
+    || echo "  conteneur -> 1.1.1.1 : KO -> DNS public bloqué : WABA_DOCKER_DNS=\"<DNS du réseau>\" scripts/k8s/docker-dns.sh" >&2
   exit 1
 fi
 echo "✔ DNS du cluster opérationnel"

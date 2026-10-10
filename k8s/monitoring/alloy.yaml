@@ -1,0 +1,87 @@
+# =============================================================================
+# 9.7 Observabilité — Grafana Alloy : collecte des journaux des pods de la plateforme -> Loki.
+# (Promtail est en fin de vie ; Alloy est le collecteur maintenu par Grafana Labs.)
+#   * lecture via l'API Kubernetes (loki.source.kubernetes) : ni hostPath ni conteneur privilégié ;
+#   * journaux JSON des jobs (Spark, Airflow, générateur) : le niveau devient le label « level »
+#     -> requêtes du type {namespace="processing", level="ERROR"} dans Grafana ;
+#   * RBAC réduit au strict nécessaire (pods, logs, namespaces) : le chart accorde par défaut la lecture
+#     des Secrets et ConfigMaps de tout le cluster, inutile ici.
+# =============================================================================
+crds:
+  create: false                   # pas de CRD PodLogs : la découverte se fait par l'API des pods
+
+controller:
+  type: deployment                # un seul collecteur suffit pour un nœud (lecture par l'API, pas par le disque)
+  replicas: 1
+
+rbac:
+  create: true
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "pods/log", "namespaces"]
+      verbs: ["get", "list", "watch"]
+  clusterRules: []
+
+alloy:
+  enableReporting: false
+  resources:
+    requests: { cpu: 20m, memory: 96Mi }
+    limits: { memory: 256Mi }
+  configMap:
+    content: |-
+      // Pods des namespaces de la plateforme WABA
+      discovery.kubernetes "pods" {
+        role = "pod"
+        namespaces {
+          names = ["ingestion", "processing", "serving", "governance", "monitoring"]
+        }
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        // app = nom de l'application Spark, sinon app.kubernetes.io/name
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_spark_app_name"]
+          regex         = "(.+)"
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          regex         = "(.+)"
+          target_label  = "app"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.process.waba.receiver]
+      }
+
+      // Journaux JSON (waba_spark.common.JsonFormatter, alertes Airflow) : niveau -> label
+      loki.process "waba" {
+        stage.json {
+          expressions = { level = "level" }
+        }
+        stage.labels {
+          values = { level = "" }
+        }
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }

@@ -27,7 +27,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from waba_spark import fraud as FR
-from waba_spark import iceberg
+from waba_spark import iceberg, monitoring
 from waba_spark import streaming as ST
 from waba_spark.common import build_spark, get_logger
 
@@ -168,6 +168,7 @@ def main() -> int:
         _log("rules", batch_id, fraud_alerts=n_fraud, aml_events=n_aml)
 
     ids: dict[str, str] = {}
+    monitoring.install(spark, BOOTSTRAP)        # lag par requête visible dans Kafka (alerte AML)
 
     def start(df: DataFrame, name: str, fn, mode: str):
         q = (df.writeStream.foreachBatch(fn).outputMode(mode).queryName(name)

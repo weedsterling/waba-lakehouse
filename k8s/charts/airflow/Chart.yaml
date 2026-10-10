@@ -2,5 +2,5 @@ apiVersion: v2
 name: airflow
 description: "WABA — Apache Airflow 3 (LocalExecutor) : orchestration des jobs Spark batch en SparkApplication"
 type: application
-version: 0.2.0
+version: 0.2.1
 appVersion: "3.3.2"

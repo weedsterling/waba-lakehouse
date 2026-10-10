@@ -1,0 +1,22 @@
+# Règles d'alerte et tableaux de bord Grafana « as code » : chargés à chaud par les sidecars de Grafana
+# (ConfigMaps étiquetées grafana_alert / grafana_dashboard), dossier « {{ .Values.folder }} ».
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waba-grafana-alerts
+  labels: { grafana_alert: "1", app.kubernetes.io/part-of: waba }
+data:
+  waba-alerts.yaml: |-
+{{ .Files.Get "files/alerts/waba-alerts.yaml" | indent 4 }}
+{{- range $path, $_ := .Files.Glob "files/dashboards/*.json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waba-dashboard-{{ base $path | trimSuffix ".json" }}
+  labels: { grafana_dashboard: "1", app.kubernetes.io/part-of: waba }
+  annotations: { grafana_folder: {{ $.Values.folder }} }
+data:
+  {{ base $path }}: |-
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}

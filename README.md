@@ -288,7 +288,7 @@ docker compose stop                # libère la mémoire : la stack Compose rest
 | `processing` | Catalogue Iceberg REST adossé à PostgreSQL (StatefulSet + PVC), Spark Operator (kubeflow) : flux `stream-raw-silver` / `stream-silver-gold` en `SparkApplication` (`restartPolicy: Always`) ; Airflow 3 (api-server, scheduler LocalExecutor en StatefulSet, dag-processor, triggerer, PostgreSQL) : chaque tâche Spark des DAGs devient une `SparkApplication` (`waba/spark_k8s.py`, modèle unique rendu par le chart `spark-jobs`) |
 | `serving` | Trino (catalogues Iceberg + Kafka), Superset 6.1 (3 tableaux de bord importés depuis le dépôt, PostgreSQL) |
 | `governance` | Keycloak 26 (realm `waba` as code, SSO de Superset et de Trino), OpenMetadata 1.12 à la demande (catalogue as code) |
-| `monitoring` | Prometheus, Grafana, Loki |
+| `monitoring` | kube-prometheus-stack (Prometheus, Grafana 13, kube-state-metrics), Loki 3.7 monolithique, Grafana Alloy (collecte des journaux) ; alertes et tableau de bord as code (chart `observability`) |
 
 Secrets Kubernetes créés par `scripts/k8s/bootstrap.sh` depuis `.env` (rien dans les manifestes),
 sondes liveness/readiness sur chaque composant, interfaces exposées par Ingress (`*.waba.local`).
@@ -318,6 +318,24 @@ bronze/silver/gold/reporting, 7 tables Gold documentées avec propriétaire « W
 identifiants personnels marqués `PII.Sensitive`, lineage raw → bronze → silver → gold → reporting portant le DAG
 producteur, glossaire « WABA Finance »). Tout est déclaré dans `openmetadata/catalog.py` ; `governance.sh down`
 libère la mémoire. http://openmetadata.waba.local (admin@open-metadata.org / `OM_ADMIN_PASSWORD`).
+
+**Observabilité (9.7)** — http://grafana.waba.local (admin / `GRAFANA_ADMIN_PASSWORD` de `.env`), dossier
+**WABA** : tableau de bord « Supervision plateforme » (état des flux, lag Kafka, rapport réglementaire,
+mémoire par domaine, journaux en erreur) et les 3 alertes du challenge, provisionnés depuis le dépôt
+(`k8s/charts/observability`, tableau de bord généré par `observability/build_dashboard.py`) :
+
+| Alerte | Source | Règle |
+|---|---|---|
+| Job Spark fraude en erreur > 5 min | kube-state-metrics (état des `SparkApplication`) | `stream-silver-gold` hors `RUNNING` pendant 5 min (ou supprimé) |
+| Lag consumer AML > 5 000 | Kafka Exporter (Strimzi) | lag du groupe `waba-spark-rules` (requête qui produit `gold-aml-events`) |
+| `dag_regulatory_report` en échec à 06h00 UTC | base Airflow (compte `grafana_ro`, `SELECT` sur `dag_run` seul) | à partir de 06h00 UTC : aucun succès du jour, ou dernière exécution en échec |
+
+Spark Structured Streaming ne s'inscrit dans aucun groupe Kafka (progression dans le checkpoint) : un listener
+(`spark/waba_spark/monitoring.py`) publie après chaque micro-lot les offsets traités dans `waba-spark-<requête>`.
+Le lag est ainsi mesuré côté Kafka et continue de croître quand le job est arrêté ; la reprise reste pilotée par
+le checkpoint (exactement-une-fois inchangé). Journaux : Alloy lit les pods par l'API Kubernetes (RBAC limité à
+`pods`, `pods/log`, `namespaces`), le niveau des journaux JSON devient le label `level` dans Loki.
+Exercices : `./scripts/k8s/alert-drill.sh incident-start|incident-stop|regulatory-fail|regulatory-run|status`.
 
 **Superset** — http://superset.waba.local (admin / `SUPERSET_ADMIN_PASSWORD` de `.env`). Tableaux de bord
 *as code* (`superset/dashboards/waba_dashboards.py`, importés par `waba_provision.py`) : 10 jeux de données SQL Trino, 15 graphiques, 3 tableaux

@@ -1,0 +1,158 @@
+# =============================================================================
+# Alertes du challenge (Grafana Unified Alerting, provisioning as code). Évaluées chaque minute.
+#   1. Job Spark fraude en erreur depuis plus de 5 min   -> Prometheus (kube-state-metrics : état SparkApplication)
+#   2. Lag du consumer AML > 5 000 messages              -> Prometheus (Kafka Exporter : groupe waba-spark-rules)
+#   3. dag_regulatory_report en échec à 06h00 UTC        -> base Airflow (compte lecture seule grafana_ro)
+# Exercices de déclenchement : scripts/k8s/alert-drill.sh
+# =============================================================================
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: waba-critique
+    folder: WABA
+    interval: 1m
+    rules:
+      # ---------------------------------------------------------------- 1. fraude
+      - uid: waba-fraud-job-error
+        title: "Job Spark fraude en erreur depuis plus de 5 min"
+        condition: C
+        for: 5m
+        noDataState: Alerting       # sans données = SparkApplication absente : le job ne tourne pas
+        execErrState: Error
+        isPaused: false
+        labels: { severity: critical, domaine: fraude }
+        annotations:
+          summary: "stream-silver-gold n'est plus en état RUNNING depuis plus de 5 minutes"
+          description: >-
+            Le job temps réel de détection (fraude, AML, liquidité) est arrêté ou en échec : aucune
+            alerte n'est plus produite dans gold-fraud-alerts. Diagnostic :
+            kubectl -n processing describe sparkapplication stream-silver-gold ;
+            journaux : {app="stream-silver-gold"} dans Loki.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: >-
+                max(waba_sparkapp_state{namespace="processing", name="stream-silver-gold", state="RUNNING"})
+                or on() vector(0)
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+              datasource: { type: __expr__, uid: __expr__ }
+
+      # ---------------------------------------------------------------- 2. AML
+      - uid: waba-aml-consumer-lag
+        title: "Lag du consumer AML supérieur à 5 000 messages"
+        condition: C
+        for: 1m
+        noDataState: NoData         # groupe jamais publié : alerte distincte « pas de données »
+        execErrState: Error
+        isPaused: false
+        labels: { severity: critical, domaine: aml }
+        annotations:
+          summary: "Retard de {{ $values.B.Value }} messages sur la détection AML (seuil 5 000)"
+          description: >-
+            La requête « rules » de stream-silver-gold (groupe Kafka waba-spark-rules) a plus de 5 000 messages
+            silver-* non traités : les déclarations AML (gold-aml-events) sont en retard. Causes probables :
+            job arrêté, micro-lots trop lents, pic d'activité. Voir le tableau de bord « WABA — Supervision ».
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: sum(kafka_consumergroup_lag{consumergroup="waba-spark-rules"})
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5000] }
+              datasource: { type: __expr__, uid: __expr__ }
+
+      # ---------------------------------------------------------------- 3. reporting réglementaire
+      # Échéance 06h00 UTC : à partir de 06h00, le rapport du jour doit exister en succès (exécution
+      # planifiée à 00h30) et la dernière exécution ne doit pas être en échec. Reste active jusqu'au
+      # succès d'une nouvelle exécution (relance manuelle), réinitialisée à minuit UTC.
+      - uid: waba-regulatory-report-failed
+        title: "dag_regulatory_report en échec à 06h00 UTC"
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        isPaused: false
+        labels: { severity: critical, domaine: reglementaire }
+        annotations:
+          summary: "Rapport réglementaire BCEAO / CIMA non produit (dernière exécution : {{ $labels.derniere_execution }})"
+          description: >-
+            Échéance de 06h00 UTC dépassée sans rapport réglementaire du jour en succès. Relancer
+            dag_regulatory_report dans Airflow après correction ; journaux :
+            {namespace="processing"} |= "dag_regulatory_report" dans Loki.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: airflow-db
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              datasource: { type: grafana-postgresql-datasource, uid: airflow-db }
+              rawSql: |-
+                WITH jour AS (SELECT date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS debut),
+                derniere AS (
+                  SELECT state FROM dag_run WHERE dag_id = 'dag_regulatory_report' ORDER BY id DESC LIMIT 1),
+                succes AS (
+                  SELECT count(*) AS n FROM dag_run, jour
+                  WHERE dag_id = 'dag_regulatory_report' AND state = 'success' AND end_date >= jour.debut)
+                SELECT
+                  COALESCE((SELECT state FROM derniere), 'aucune') AS derniere_execution,
+                  CASE WHEN extract(hour FROM now() AT TIME ZONE 'UTC') >= 6
+                        AND ((SELECT n FROM succes) = 0 OR (SELECT state FROM derniere) = 'failed')
+                       THEN 1 ELSE 0 END AS en_echec
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              datasource: { type: __expr__, uid: __expr__ }

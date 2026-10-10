@@ -1,0 +1,161 @@
+# =============================================================================
+# 9.7 Observabilité — kube-prometheus-stack (Prometheus Operator, Prometheus, Grafana, kube-state-metrics,
+# node-exporter). Dimensionné pour cohabiter avec la plateforme sur un nœud Minikube (~1 Go au total).
+#   * alertes : Grafana Unified Alerting, provisionnées as code par le chart ./charts/observability
+#     (pas d'Alertmanager : un seul moteur d'alertes, visible dans l'interface Grafana) ;
+#   * aucun secret ici : mot de passe admin et compte lecture seule Airflow dans le Secret waba-grafana
+#     (créé depuis .env par scripts/k8s/bootstrap.sh).
+# =============================================================================
+fullnameOverride: kps
+
+alertmanager:
+  enabled: false
+
+# Composants du plan de contrôle non exposés par Minikube (écoute sur 127.0.0.1) : pas de cibles en échec
+kubeEtcd: { enabled: false }
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeProxy: { enabled: false }
+windowsMonitoring: { enabled: false }
+
+defaultRules:
+  create: true                  # règles d'enregistrement utilisées par les tableaux de bord Kubernetes
+  rules:
+    alertmanager: false
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    windows: false
+
+prometheusOperator:
+  admissionWebhooks: { enabled: false }   # pas de Job de certificats ni de webhook (cluster de démonstration)
+  tls: { enabled: false }
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 192Mi }
+  prometheusConfigReloader:
+    resources:
+      requests: { cpu: 10m, memory: 24Mi }
+      limits: { memory: 64Mi }
+
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    retention: 3d
+    retentionSize: 3GB
+    # Sélectionne tous les ServiceMonitor / PodMonitor / règles du cluster, quel que soit leur release Helm
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 384Mi }
+      limits: { memory: 1Gi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources: { requests: { storage: 4Gi } }
+
+kube-state-metrics:
+  resources:
+    requests: { cpu: 20m, memory: 48Mi }
+    limits: { memory: 128Mi }
+  # État des SparkApplication (CRD de l'opérateur Spark) -> waba_sparkapp_state{name, namespace, state}
+  # Alerte « job Spark fraude en erreur > 5 min » : stream-silver-gold hors de l'état RUNNING.
+  rbac:
+    extraRules:
+      - apiGroups: ["sparkoperator.k8s.io"]
+        resources: ["sparkapplications"]
+        verbs: ["list", "watch"]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind: { group: sparkoperator.k8s.io, version: v1beta2, kind: SparkApplication }
+            metricNamePrefix: waba_sparkapp
+            labelsFromPath:
+              name: [metadata, name]
+              namespace: [metadata, namespace]
+            metrics:
+              - name: state
+                help: "État de la SparkApplication (1 pour l'état courant)"
+                each:
+                  type: StateSet
+                  stateSet:
+                    labelName: state
+                    path: [status, applicationState, state]
+                    list: [NEW, SUBMITTED, RUNNING, COMPLETED, FAILED, SUBMISSION_FAILED, PENDING_RERUN,
+                           INVALIDATING, SUCCEEDING, FAILING, UNKNOWN]
+
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 10m, memory: 24Mi }
+    limits: { memory: 64Mi }
+
+grafana:
+  admin:
+    existingSecret: waba-grafana
+    userKey: admin-user
+    passwordKey: admin-password
+  # Mot de passe du compte PostgreSQL grafana_ro (lecture seule de dag_run), injecté dans la datasource
+  envValueFrom:
+    AIRFLOW_GRAFANA_DB_PASSWORD:
+      secretKeyRef: { name: waba-grafana, key: AIRFLOW_GRAFANA_DB_PASSWORD }
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts: [grafana.waba.local]
+    path: /
+  persistence:                  # état des alertes, silences, préférences (le reste est as code)
+    enabled: true
+    size: 1Gi
+  resources:
+    requests: { cpu: 50m, memory: 160Mi }
+    limits: { memory: 512Mi }
+  grafana.ini:
+    server:
+      root_url: http://grafana.waba.local
+    date_formats:
+      default_timezone: utc     # heure réglementaire de référence (Abidjan = UTC)
+    users:
+      default_language: fr-FR
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+      check_for_plugin_updates: false
+    auth.anonymous:
+      enabled: false
+  defaultDashboardsTimezone: utc
+  sidecar:
+    resources:
+      requests: { cpu: 10m, memory: 48Mi }
+      limits: { memory: 128Mi }
+    dashboards:
+      folderAnnotation: grafana_folder          # dossier « WABA » pour les tableaux de bord du dépôt
+      provider:
+        foldersFromFilesStructure: true
+    alerts:                                     # règles d'alerte as code (ConfigMaps grafana_alert=1)
+      enabled: true
+      label: grafana_alert
+      labelValue: "1"
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc.cluster.local:3100
+      jsonData: { maxLines: 1000 }
+    - name: Airflow (métadonnées)
+      uid: airflow-db
+      type: grafana-postgresql-datasource
+      access: proxy
+      url: airflow-postgres.processing.svc.cluster.local:5432
+      user: grafana_ro
+      jsonData: { database: airflow, sslmode: disable, postgresVersion: 1600, maxOpenConns: 2 }
+      secureJsonData:
+        password: ${AIRFLOW_GRAFANA_DB_PASSWORD}

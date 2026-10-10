@@ -27,12 +27,17 @@ secret processing waba-pii "PII_HASH_SALT=$PII_HASH_SALT"
 [[ -n "${ICEBERG_DB_PASSWORD:-}" && "$ICEBERG_DB_PASSWORD" != change-me* ]] \
   || { echo "ICEBERG_DB_PASSWORD manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
 secret processing waba-catalog-db "ICEBERG_DB_PASSWORD=$ICEBERG_DB_PASSWORD"
-for v in AIRFLOW_ADMIN_PASSWORD AIRFLOW_DB_PASSWORD AIRFLOW_FERNET_KEY AIRFLOW_JWT_SECRET AIRFLOW_API_SECRET_KEY; do
+for v in AIRFLOW_ADMIN_PASSWORD AIRFLOW_DB_PASSWORD AIRFLOW_FERNET_KEY AIRFLOW_JWT_SECRET AIRFLOW_API_SECRET_KEY \
+         AIRFLOW_GRAFANA_DB_PASSWORD GRAFANA_ADMIN_PASSWORD; do
   [[ -n "${!v:-}" && "${!v}" != change-me* ]] || { echo "$v manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
 done
 secret processing waba-airflow "AIRFLOW_DB_PASSWORD=$AIRFLOW_DB_PASSWORD" "AIRFLOW_FERNET_KEY=$AIRFLOW_FERNET_KEY" \
   "AIRFLOW_JWT_SECRET=$AIRFLOW_JWT_SECRET" "AIRFLOW_API_SECRET_KEY=$AIRFLOW_API_SECRET_KEY" \
+  "AIRFLOW_GRAFANA_DB_PASSWORD=$AIRFLOW_GRAFANA_DB_PASSWORD" \
   "passwords.json={\"admin\": \"$AIRFLOW_ADMIN_PASSWORD\"}"          # UI Airflow (SimpleAuthManager)
+# Grafana (9.7) : compte admin + lecture seule de la base Airflow (alerte rapport réglementaire)
+secret monitoring waba-grafana "admin-user=admin" "admin-password=$GRAFANA_ADMIN_PASSWORD" \
+  "AIRFLOW_GRAFANA_DB_PASSWORD=$AIRFLOW_GRAFANA_DB_PASSWORD"
 for v in SUPERSET_SECRET_KEY SUPERSET_DB_PASSWORD SUPERSET_ADMIN_PASSWORD; do
   [[ -n "${!v:-}" && "${!v}" != change-me* ]] || { echo "$v manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
 done

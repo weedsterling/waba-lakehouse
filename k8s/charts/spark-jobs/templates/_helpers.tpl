@@ -56,6 +56,11 @@ spec:
     memory: {{ $app.driverMemory | quote }}
     serviceAccount: {{ $root.Values.serviceAccount }}
     labels: { app.kubernetes.io/part-of: waba, waba.io/app: {{ $app.name }} }
+    {{- if eq $app.kind "streaming" }}
+    # Empreinte du code monté (ConfigMaps) : un changement de code modifie la spec -> l'opérateur relance le
+    # flux, qui reprend exactement depuis son checkpoint. Sans elle, un flux permanent garderait l'ancien code.
+    annotations: { waba.io/code-checksum: {{ include "waba.codeChecksum" $root | quote }} }
+    {{- end }}
     env:
     {{- range $k, $v := $root.Values.env.plain }}
       - { name: {{ $k }}, value: {{ $v | quote }} }
@@ -84,4 +89,11 @@ spec:
     volumeMounts:
       - { name: jobs, mountPath: /opt/waba/jobs }
       - { name: lib, mountPath: /opt/waba/waba_spark }
+{{- end }}
+
+{{/* Empreinte du code Spark monté dans les pods (ConfigMaps créées par scripts/k8s/bootstrap.sh) */}}
+{{- define "waba.codeChecksum" -}}
+{{- $j := lookup "v1" "ConfigMap" .Release.Namespace "waba-spark-jobs" | default dict -}}
+{{- $l := lookup "v1" "ConfigMap" .Release.Namespace "waba-spark-lib" | default dict -}}
+{{- printf "%s|%s" (get $j "data" | default dict | toJson) (get $l "data" | default dict | toJson) | sha256sum | trunc 16 -}}
 {{- end }}

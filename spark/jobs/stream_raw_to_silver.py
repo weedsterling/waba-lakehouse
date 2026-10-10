@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
-from waba_spark import iceberg
+from waba_spark import iceberg, monitoring
 from waba_spark import silver as S
 from waba_spark import streaming as ST
 from waba_spark import validation as V
@@ -167,6 +167,7 @@ def main() -> int:
            .option("failOnDataLoss", "false")
            .load())
     run: dict = {}
+    monitoring.install(spark, BOOTSTRAP)        # lag visible dans Kafka (supervision Grafana)
     query = (ST.deduplicated_events(raw).writeStream.foreachBatch(process_batch(Reference(spark), run))
              .option("checkpointLocation", CHECKPOINT)
              .trigger(processingTime=TRIGGER)

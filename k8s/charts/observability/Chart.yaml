@@ -1,0 +1,6 @@
+apiVersion: v2
+name: observability
+description: "WABA — supervision as code : alertes Grafana (fraude, AML, réglementaire), tableau de bord plateforme, collecte des métriques Kafka"
+type: application
+version: 0.1.0
+appVersion: "1.0"

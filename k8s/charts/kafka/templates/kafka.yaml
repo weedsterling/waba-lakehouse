@@ -42,3 +42,11 @@ spec:
       resources:
         requests: { cpu: 50m, memory: 256Mi }
         limits: { memory: 384Mi }
+  # Kafka Exporter (géré par Strimzi) : lag des groupes de consommateurs -> Prometheus (PodMonitor du chart
+  # observability). Les flux Spark publient leur progression dans les groupes waba-spark-* (waba_spark/monitoring.py).
+  kafkaExporter:
+    groupRegex: {{ .Values.exporter.groupRegex | quote }}
+    topicRegex: {{ .Values.exporter.topicRegex | quote }}
+    resources:
+      requests: { cpu: 20m, memory: 48Mi }
+      limits: { memory: 128Mi }

@@ -1,0 +1,7 @@
+# Les seuils des 3 alertes du challenge sont dans files/alerts/waba-alerts.yaml (format de provisioning Grafana,
+# non templaté par Helm : les annotations utilisent la syntaxe de modèles de Grafana).
+folder: WABA
+
+kafka:
+  namespace: ingestion
+  exporterName: waba-kafka-exporter   # pod géré par Strimzi (Kafka.spec.kafkaExporter)
