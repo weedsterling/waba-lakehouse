@@ -345,7 +345,7 @@ def run(dry_run: bool) -> int:
 
     # 5. Lineage avec le pipeline producteur sur chaque arête
     entity_type = {"table": Table, "container": Container}
-    added = 0
+    added, failed = 0, []
     for src_type, src, dst_type, dst, pipeline in edges:
         a = om.get_by_name(entity_type[src_type], src)
         b = om.get_by_name(entity_type[dst_type], dst)
@@ -353,16 +353,22 @@ def run(dry_run: bool) -> int:
         if not (a and b and p):
             missing.append(f"lineage {src} -> {dst}")
             continue
-        om.add_lineage(AddLineageRequest(edge=EntitiesEdge(
+        result = om.add_lineage(AddLineageRequest(edge=EntitiesEdge(
             fromEntity=EntityReference(id=a.id, type=src_type), toEntity=EntityReference(id=b.id, type=dst_type),
             lineageDetails=LineageDetails(pipeline=EntityReference(id=p.id, type="pipeline"),
                                           source=LineageSource.PipelineLineage,
                                           description=PIPELINES[pipeline]))))
-        added += 1
+        if isinstance(result, dict) and "error" in result:       # le SDK journalise l'erreur sans lever
+            failed.append(f"{src} -> {dst}")
+        else:
+            added += 1
     print(f"catalogue appliqué : {len(GOLD)} tables Gold documentées, {added}/{len(edges)} arêtes de lineage",
           flush=True)
     if missing:
         print("⚠ absents du catalogue (tables non encore créées par les pipelines ?) :", sorted(set(missing)))
+    if failed:                                                  # le Job doit échouer : jamais de faux succès
+        print(f"✘ {len(failed)} arêtes de lineage refusées par le serveur (voir les erreurs ci-dessus)", flush=True)
+        return 1
     return 0
 
 
