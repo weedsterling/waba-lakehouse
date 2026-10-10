@@ -11,3 +11,4 @@ metastore_db/
 derby.log
 .idea/
 .vscode/
+.secrets/

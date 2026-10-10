@@ -101,3 +101,9 @@ releases:
     namespace: governance
     chart: ./charts/keycloak
     timeout: 900                      # premier démarrage : optimisation Quarkus + import du realm
+
+  - name: openmetadata
+    namespace: governance
+    chart: ./charts/openmetadata
+    needs: [serving/trino]
+    timeout: 900                      # installé arrêté (replicas 0) : scripts/k8s/governance.sh up

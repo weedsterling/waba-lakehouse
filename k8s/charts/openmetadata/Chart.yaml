@@ -1,0 +1,6 @@
+apiVersion: v2
+name: openmetadata
+description: "WABA — OpenMetadata 1.12 (catalogue, PII, lineage) : serveur, PostgreSQL, Elasticsearch, catalogue as code"
+type: application
+version: 0.1.0
+appVersion: "1.12.14"

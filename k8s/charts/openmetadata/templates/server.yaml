@@ -1,0 +1,85 @@
+# Serveur OpenMetadata (API + UI). Le schéma est migré à chaque démarrage (initContainer, idempotent).
+# Clés JWT propres à l'installation (Secret waba-om-jwt, générées par bootstrap.sh) : jamais les clés de
+# démonstration fournies dans l'image.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmetadata
+  labels: { app.kubernetes.io/name: openmetadata, app.kubernetes.io/part-of: waba }
+spec:
+  replicas: {{ .Values.replicas }}
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: openmetadata }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: openmetadata, app.kubernetes.io/part-of: waba }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false        # sinon OPENMETADATA_PORT=tcp://… injecté par le Service
+      initContainers:
+        - name: wait-for-dependencies
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z openmetadata-postgres 5432 && wget -qO- http://openmetadata-search:9200/_cluster/health >/dev/null; do echo attente PostgreSQL / Elasticsearch; sleep 5; done"]
+        - name: migrate
+          image: {{ .Values.image }}
+          command: ["./bootstrap/openmetadata-ops.sh", "migrate"]
+          env:
+            {{- include "om.env" . | nindent 12 }}
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/om-jwt, readOnly: true }
+      containers:
+        - name: openmetadata
+          image: {{ .Values.image }}
+          env:
+            {{- include "om.env" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 8585 }
+            - { name: admin, containerPort: 8586 }
+          startupProbe:
+            httpGet: { path: /healthcheck, port: admin }
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /healthcheck, port: admin }
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /healthcheck, port: admin }
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/om-jwt, readOnly: true }
+      volumes:
+        - name: jwt
+          secret: { secretName: waba-om-jwt }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openmetadata
+spec:
+  selector: { app.kubernetes.io/name: openmetadata }
+  ports:
+    - { name: http, port: 8585, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openmetadata
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openmetadata
+                port: { name: http }

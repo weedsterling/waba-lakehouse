@@ -32,6 +32,9 @@ declare -A GEN=(
   [SUPERSET_OIDC_SECRET]="$(rand_hex 24)"
   [TRINO_OIDC_SECRET]="$(rand_hex 24)"
   [TRINO_SHARED_SECRET]="$(rand_hex 32)"
+  [OM_DB_PASSWORD]="$(rand_hex 16)"
+  [OM_FERNET_KEY]="$(fernet)"
+  [OM_ADMIN_PASSWORD]="Wa-$(rand_hex 6)-Om9"     # politique OpenMetadata : majuscule, minuscule, chiffre, symbole
 )
 
 # Ajoute les clés présentes dans .env.example mais absentes de .env (nouveaux niveaux)
@@ -51,4 +54,5 @@ chmod 600 .env
 echo "Mot de passe de l'interface NiFi (utilisateur admin) : $(grep '^NIFI_ADMIN_PASSWORD=' .env | cut -d= -f2)"
 echo "Mot de passe de l'interface Airflow (utilisateur admin) : $(grep '^AIRFLOW_ADMIN_PASSWORD=' .env | cut -d= -f2)"
 echo "Console Keycloak (utilisateur admin) : $(grep '^KEYCLOAK_ADMIN_PASSWORD=' .env | cut -d= -f2)"
+echo "OpenMetadata (admin@open-metadata.org) : $(grep '^OM_ADMIN_PASSWORD=' .env | cut -d= -f2)"
 echo "Utilisateurs de démo Keycloak (admin.groupe, analyste.ci, analyste.sn, conformite, lecteur) : $(grep '^KEYCLOAK_DEMO_PASSWORD=' .env | cut -d= -f2)"

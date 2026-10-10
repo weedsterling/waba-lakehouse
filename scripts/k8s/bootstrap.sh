@@ -47,6 +47,23 @@ secret governance waba-keycloak "KC_BOOTSTRAP_ADMIN_PASSWORD=$KEYCLOAK_ADMIN_PAS
   "KC_DB_PASSWORD=$KEYCLOAK_DB_PASSWORD" "KEYCLOAK_DEMO_PASSWORD=$KEYCLOAK_DEMO_PASSWORD" \
   "SUPERSET_OIDC_SECRET=$SUPERSET_OIDC_SECRET" "TRINO_OIDC_SECRET=$TRINO_OIDC_SECRET"
 secret serving waba-trino "TRINO_SHARED_SECRET=$TRINO_SHARED_SECRET" "TRINO_OIDC_SECRET=$TRINO_OIDC_SECRET"
+for v in OM_DB_PASSWORD OM_FERNET_KEY OM_ADMIN_PASSWORD; do
+  [[ -n "${!v:-}" && "${!v}" != change-me* ]] || { echo "$v manquant : lancer ./scripts/gen-secrets.sh" >&2; exit 1; }
+done
+secret governance waba-openmetadata "DB_USER_PASSWORD=$OM_DB_PASSWORD" "FERNET_KEY=$OM_FERNET_KEY" \
+  "OM_ADMIN_PASSWORD=$OM_ADMIN_PASSWORD"
+# Clés JWT OpenMetadata propres à l'installation (jamais les clés de démonstration de l'image) : générées une
+# fois dans .secrets/ (ignoré par Git) et conservées, sinon les jetons émis deviendraient invalides.
+jwt=.secrets/openmetadata
+if [[ ! -f $jwt/private_key.der ]]; then
+  mkdir -p "$jwt" && chmod 700 .secrets "$jwt"
+  openssl genrsa -out "$jwt/key.pem" 2048 2>/dev/null
+  openssl pkcs8 -topk8 -inform PEM -outform DER -in "$jwt/key.pem" -out "$jwt/private_key.der" -nocrypt
+  openssl rsa -in "$jwt/key.pem" -pubout -outform DER -out "$jwt/public_key.der" 2>/dev/null
+  rm -f "$jwt/key.pem"
+fi
+kubectl -n governance create secret generic waba-om-jwt --from-file="$jwt/private_key.der" \
+  --from-file="$jwt/public_key.der" --dry-run=client -o yaml | apply
 secret ingestion waba-nifi "NIFI_ADMIN_USER=${NIFI_ADMIN_USER:-admin}" "NIFI_ADMIN_PASSWORD=$NIFI_ADMIN_PASSWORD" \
   "NIFI_SENSITIVE_PROPS_KEY=$NIFI_SENSITIVE_PROPS_KEY"
 
@@ -71,6 +88,7 @@ configmap serving superset-dashboards --from-file=superset/dashboards/   # table
 configmap governance keycloak-realm --from-file=waba-realm.json=keycloak/waba-realm.json
 configmap governance keycloak-sync --from-file=sync_realm.py=keycloak/sync_realm.py
 configmap serving trino-security --from-file=trino/security/
+configmap governance openmetadata-catalog --from-file=catalog.py=openmetadata/catalog.py
 
 # Noms d'hôtes des interfaces (Ingress) -> IP du cluster, dans /etc/hosts de la VM
 ip=$(minikube ip)

@@ -1,0 +1,26 @@
+image: openmetadata/server:1.12.14
+catalogImage: waba/om-catalog:1.12.14       # openmetadata/Dockerfile (SDK + connecteur Trino), construite par deploy.sh
+host: openmetadata.waba.local
+# Composant lourd (serveur + moteur de recherche ~3 Go) : démarré à la demande, cf. scripts/k8s/governance.sh
+replicas: 0                     # arrêté par défaut : ./scripts/k8s/governance.sh up|down|catalog
+server:
+  heap: "-Xms768m -Xmx1g"
+  resources:
+    requests: { cpu: 200m, memory: 1280Mi }
+    limits: { memory: 1792Mi }
+search:
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4   # version de la stack Docker officielle OM
+  heap: "-Xms512m -Xmx512m"
+  storage: 3Gi
+  resources:
+    requests: { cpu: 100m, memory: 1Gi }
+    limits: { memory: 1280Mi }
+db:
+  image: postgres:16-alpine
+  storage: 2Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+catalog:
+  schedule: "15 6 * * *"     # rafraîchissement quotidien du catalogue (après les DAGs de la nuit)
+  trinoHostPort: trino.serving.svc.cluster.local:8080

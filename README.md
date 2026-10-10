@@ -287,7 +287,7 @@ docker compose stop                # libère la mémoire : la stack Compose rest
 | `ingestion` | MinIO (StatefulSet + PVC, Job d'initialisation), Kafka KRaft (opérateur Strimzi, topics `KafkaTopic`), NiFi (StatefulSet, flux provisionné par Job), générateur |
 | `processing` | Catalogue Iceberg REST adossé à PostgreSQL (StatefulSet + PVC), Spark Operator (kubeflow) : flux `stream-raw-silver` / `stream-silver-gold` en `SparkApplication` (`restartPolicy: Always`) ; Airflow 3 (api-server, scheduler LocalExecutor en StatefulSet, dag-processor, triggerer, PostgreSQL) : chaque tâche Spark des DAGs devient une `SparkApplication` (`waba/spark_k8s.py`, modèle unique rendu par le chart `spark-jobs`) |
 | `serving` | Trino (catalogues Iceberg + Kafka), Superset 6.1 (3 tableaux de bord importés depuis le dépôt, PostgreSQL) |
-| `governance` | Keycloak 26 (realm `waba` as code, SSO de Superset et de Trino), OpenMetadata |
+| `governance` | Keycloak 26 (realm `waba` as code, SSO de Superset et de Trino), OpenMetadata 1.12 à la demande (catalogue as code) |
 | `monitoring` | Prometheus, Grafana, Loki |
 
 Secrets Kubernetes créés par `scripts/k8s/bootstrap.sh` depuis `.env` (rien dans les manifestes),
@@ -311,6 +311,13 @@ Utilisateurs de démo `admin.groupe`, `analyste.ci`, `analyste.sn`, `conformite`
 seul pour `compliance_officer`, agrégats sans SQL Lab ni export pour `viewer`. Trino : règles d'accès par
 fichier (`trino/security/`), filtre de lignes par pays et colonnes IBAN refusées pour les analystes, Silver
 interdit au `viewer`. Détails : `keycloak/README.md`, `trino/security/README.md`.
+
+**Catalogue (9.6b)** — OpenMetadata est installé arrêté (≈ 3 Go avec Elasticsearch) et démarré à la demande :
+`./scripts/k8s/governance.sh up` puis `./scripts/k8s/governance.sh catalog` (découverte Trino des schémas
+bronze/silver/gold/reporting, 7 tables Gold documentées avec propriétaire « WABA Group » et tags BCEAO/CIMA/AML,
+identifiants personnels marqués `PII.Sensitive`, lineage raw → bronze → silver → gold → reporting portant le DAG
+producteur, glossaire « WABA Finance »). Tout est déclaré dans `openmetadata/catalog.py` ; `governance.sh down`
+libère la mémoire. http://openmetadata.waba.local (admin@open-metadata.org / `OM_ADMIN_PASSWORD`).
 
 **Superset** — http://superset.waba.local (admin / `SUPERSET_ADMIN_PASSWORD` de `.env`). Tableaux de bord
 *as code* (`superset/dashboards/waba_dashboards.py`, importés par `waba_provision.py`) : 10 jeux de données SQL Trino, 15 graphiques, 3 tableaux
