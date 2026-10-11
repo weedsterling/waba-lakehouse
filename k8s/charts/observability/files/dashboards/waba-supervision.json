@@ -532,7 +532,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{namespace=~\"ingestion|processing|serving|governance|monitoring\"} |~ `(?i)(\\berror\\b|\\bwarn(ing)?\\b|exception|traceback)`"
+          "expr": "{namespace=~\"ingestion|processing|serving|governance\"} |~ `(?i)(\\berror\\b|\\bwarn(ing)?\\b|exception|traceback)`"
         }
       ],
       "options": {

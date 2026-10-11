@@ -7,8 +7,8 @@ de WestAfrica BancAssur Group (8 pays, 4 lignes métier) :
 **MinIO (S3) + Apache Iceberg + Spark + Trino**, orchestrée par Airflow (Level 2),
 étendue au streaming NiFi/Kafka (Level 3) puis déployée sur Kubernetes (Level 4).
 
-> **État actuel : Level 1 livré.** Le guide d'installation et la feuille de route des niveaux 2 à 4 sont dans
-> [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Levels 1 à 4 livrés.** Write-up technique : [`docs/RAPPORT.md`](docs/RAPPORT.md) ([PDF](docs/RAPPORT.pdf)).
+> Guide d'installation détaillé : [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ---
 
@@ -185,7 +185,7 @@ Les tests Spark nécessitent Java 17 (`JAVA_HOME`) ; ils sont ignorés si PySpar
 
 ---
 
-## Level 2 — Orchestration Airflow & architecture médaillon (en cours)
+## Level 2 — Orchestration Airflow & architecture médaillon
 
 | Service | Rôle | URL |
 |---|---|---|
@@ -274,7 +274,7 @@ qu'elle a calculés, la couche temps réel complète les jours suivants.
 cat sql/level3_lambda.sql | docker compose exec -T trino trino --catalog lakehouse --output-format ALIGNED
 ```
 
-## Level 4 — Kubernetes (en cours)
+## Level 4 — Kubernetes
 
 ```bash
 ./scripts/k8s/install-tools.sh     # kubectl, minikube, helm, helmfile (versions épinglées + SHA-256)

@@ -13,6 +13,7 @@ PROM = {"type": "prometheus", "uid": "prometheus"}
 AIRFLOW = {"type": "grafana-postgresql-datasource", "uid": "airflow-db"}
 LOKI = {"type": "loki", "uid": "loki"}
 NAMESPACES = "ingestion|processing|serving|governance|monitoring"
+APP_NAMESPACES = "ingestion|processing|serving|governance"   # journaux : sans monitoring (Loki journalise nos requêtes)
 
 
 def prom(expr: str, legend: str = "", instant: bool = False) -> dict:
@@ -98,7 +99,7 @@ PANELS = [
           # Filtre sur le texte (et pas sur le label level) : couvre aussi les journaux non JSON (log4j Spark,
           # Java, Python) dont le niveau n'est pas extrait par Alloy.
           [{"refId": "A", "datasource": LOKI,
-            "expr": f'{{namespace=~"{NAMESPACES}"}} |~ `(?i)(\\berror\\b|\\bwarn(ing)?\\b|exception|traceback)`'}],
+            "expr": f'{{namespace=~"{APP_NAMESPACES}"}} |~ `(?i)(\\berror\\b|\\bwarn(ing)?\\b|exception|traceback)`'}],
           LOKI, options={"showTime": True, "wrapLogMessage": True, "sortOrder": "Descending",
                          "enableLogDetails": True}),
 ]
